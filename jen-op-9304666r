@@ -1,0 +1,95 @@
+pipeline {
+  agent any
+  options { timestamps() }
+
+  environment {
+    REPO_URL = 'https://github.com/khongwka/9304666r-op-repo.git'
+    QA_NAME  = '9304666r-qa-svr'
+    PROD_NAME= '9304666r-prod-svr'
+    QA_URL   = 'http://localhost:33200'
+    PROD_URL = 'http://localhost:33500'
+    SCRIPT   = '9304666r_script'
+    INDEX    = 'index-op-9304666r.html'
+  }
+
+  stages {
+    stage('Op-9304666r-S1') {
+      steps {
+        checkout([$class: 'GitSCM', branches: [[name: '*/main']],
+                  userRemoteConfigs: [[url: "${REPO_URL}"]]])
+        sh '''
+          test -f "${SCRIPT}" && test -f "${INDEX}" || {
+            echo "Required files missing"; exit 1;
+          }
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S2') {
+      steps {
+        sh '''
+          docker ps --format '{{.Names}}' | grep -x ${QA_NAME}
+          bolt command run 'echo QA OK' --targets docker://${QA_NAME}
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S3') {
+      steps {
+        sh '''
+          bolt script run ${SCRIPT} --targets docker://${QA_NAME}
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S4') {
+      steps {
+        sh '''
+          set -e
+          curl -Is ${QA_URL} | head -n 1 > /tmp/qa-result-file
+          cat /tmp/qa-result-file
+          grep -q 'HTTP/1.1 200 OK' /tmp/qa-result-file
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S5') {
+      when { expression { return currentBuild.currentResult == 'SUCCESS' } }
+      steps {
+        sh '''
+          docker ps --format '{{.Names}}' | grep -x ${PROD_NAME}
+          bolt script run ${SCRIPT} --targets docker://${PROD_NAME}
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S6') {
+      when { expression { return currentBuild.currentResult == 'SUCCESS' } }
+      steps {
+        sh '''
+          set -e
+          curl -Is ${PROD_URL} | head -n 1 > /tmp/prod-result-file
+          cat /tmp/prod-result-file
+          grep -q 'HTTP/1.1 200 OK' /tmp/prod-result-file
+        '''
+      }
+    }
+
+    stage('Op-9304666r-S7') {
+      when { anyOf { expression { currentBuild.currentResult != 'SUCCESS' } } }
+      steps {
+        echo 'Starting rollback...'
+        sh '''
+          bolt command run 'test -f /var/www/html/index.html.bak && cp -f /var/www/html/index.html.bak /var/www/html/index.html || echo "No QA backup found"' --targets docker://${QA_NAME}
+          bolt command run 'test -f /var/www/html/index.html.bak && cp -f /var/www/html/index.html.bak /var/www/html/index.html || echo "No PROD backup found"' --targets docker://${PROD_NAME}
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      archiveArtifacts allowEmptyArchive: true, artifacts: '/tmp/*-result-file', onlyIfSuccessful: false
+    }
+  }
+}
