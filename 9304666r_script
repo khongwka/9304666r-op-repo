@@ -43,3 +43,4 @@ puppet resource file "$DST" ensure=file source="$SRC" owner='www-data' group='ww
 
 # 8. Optional local test
 curl -Is http://localhost | head -n 1 || true
+
