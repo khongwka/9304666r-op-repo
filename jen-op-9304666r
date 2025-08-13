@@ -37,6 +37,7 @@ pipeline {
     stage('Op-9304666r-S3') {
       steps {
         sh '''
+          chmod +x ${SCRIPT}
           bolt script run ${SCRIPT} --targets docker://${QA_NAME}
         '''
       }
@@ -58,6 +59,7 @@ pipeline {
       steps {
         sh '''
           docker ps --format '{{.Names}}' | grep -x ${PROD_NAME}
+          chmod +x ${SCRIPT}
           bolt script run ${SCRIPT} --targets docker://${PROD_NAME}
         '''
       }
