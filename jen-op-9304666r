@@ -2,82 +2,47 @@ pipeline {
     agent any
 
     environment {
-        QA_NAME = '9304666r-qa-svr'
-        PROD_NAME = '9304666r-prod-svr'
-        PROD_BKUP_IMAGE = 'prod-bkup-image'
+        QA_NAME = "9304666r-qa-svr"
+        QA_BKUP_IMAGE = "qa-bkup-image"
     }
 
     stages {
-
-        // ===== TEMP DEBUG START =====
+        /* ---------- DEBUG-BANNER ---------- */
         stage('DEBUG-BANNER') {
             steps {
-                echo '****************************************************'
-                echo '*   TEMP DEBUG: THIS IS THE LATEST Jenkinsfile!    *'
-                echo '*   If you see this, Jenkins is using NEW changes  *'
-                echo '****************************************************'
-                sh 'git rev-parse HEAD || echo "No git commit hash available"'
+                echo "****************************************************"
+                echo "*   TEMP DEBUG: THIS IS THE LATEST Jenkinsfile!    *"
+                echo "*   If you see this, Jenkins is using NEW changes  *"
+                echo "****************************************************"
+                sh 'git rev-parse HEAD'
             }
         }
-        // ===== TEMP DEBUG END =====
 
-/* ---------- S1 ---------- */
-stage('Op-9304666r-S1') {
-    steps {
-        script {
-            echo "Op-9304666r-S1: QA web server is backup and updated"
-
-            // Start QA container if stopped
-            sh "docker start ${QA_NAME} || true"
-
-            // Remove old backup image
-            sh "docker rmi -f ${QA_BKUP_IMAGE} || true"
-
-            // Commit current QA container as backup image
-            sh "docker commit ${QA_NAME} ${QA_BKUP_IMAGE}"
-
-            // Install required packages inside QA container
-            sh """
-                docker exec -u root ${QA_NAME} bash -c '
-                    apt-get update -qq &&
-                    apt-get install -y wget apache2 &&
-                    wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
-                    dpkg -i puppet-release-bionic.deb &&
-                    apt-get update -qq &&
-                    apt-get install -y puppet-agent
-                '
-            """
-
-            // Ensure apache2 is installed & running
-            sh """
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
-                    package { "apache2": ensure => installed } ->
-                    service { "apache2": ensure => running, enable => true }
-                '
-            """
-
-            // Ensure /operate/9304666r exists
-            sh """
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
-                    file { "/operate": ensure => directory } ->
-                    file { "/operate/9304666r": ensure => directory }
-                '
-            """
-
-            // Deploy PROCEED content HTML file
-            sh "docker cp index-op-9304666r.html ${QA_NAME}:/tmp/"
-
-            // Copy new HTML into apache root
-            sh """
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
-                    file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }
-                '
-            """
+        /* ---------- S1 ---------- */
+        stage('Op-9304666r-S1') {
+            steps {
+                script {
+                    echo "Op-9304666r-S1: QA web server is backup and updated"
+                    sh """
+                        docker start ${QA_NAME} || true
+                        docker rmi -f ${QA_BKUP_IMAGE} || true
+                        docker commit ${QA_NAME} ${QA_BKUP_IMAGE}
+                        docker exec -u root ${QA_NAME} bash -c '
+                            apt-get update -qq &&
+                            apt-get install -y wget apache2 &&
+                            wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
+                            dpkg -i puppet-release-bionic.deb &&
+                            apt-get update -qq &&
+                            apt-get install -y puppet-agent
+                        '
+                        docker cp index-op-9304666r.html ${QA_NAME}:/tmp/
+                        docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
+                        docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
+                        docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
+                    """
+                }
+            }
         }
-    }
-}
-
-
         /* ---------- S2 ---------- */
         stage('Op-9304666r-S2') {
             steps {
@@ -278,6 +243,7 @@ stage('Op-9304666r-S3') {
         }
     }
 }
+
 
 
 
