@@ -56,7 +56,7 @@ pipeline {
                             echo "Op-9304666r-S3: QA server fails after update and is rolled back"
                             docker stop ${QA_NAME} || true
                             docker rm ${QA_NAME} || true
-                            docker run -d --name ${QA_NAME} ${QA_BKUP_IMAGE}
+                            docker run -d --name ${QA_NAME} qa-bkup-image
                         """
                         error("Aborting")
                     }
@@ -122,3 +122,4 @@ pipeline {
         }
     }
 }
+
