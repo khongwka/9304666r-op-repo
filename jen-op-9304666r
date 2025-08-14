@@ -1,6 +1,12 @@
 pipeline {
     agent any
 
+    environment {
+        QA_NAME = '9304666r-qa-svr'
+        PROD_NAME = '9304666r-prod-svr'
+        PROD_BKUP_IMAGE = 'prod-bkup-image'
+    }
+
     stages {
 
         // ===== TEMP DEBUG START =====
