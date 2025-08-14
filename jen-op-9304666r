@@ -96,12 +96,12 @@ error("Aborting")
                         echo "Op-9304666r-S5: Prod deployment successful"
                     } else {
                         sh """
-                            echo "Op-9304666r-S5: Prod server fails after update and is rolled back"
-                            docker stop ${PROD_NAME} || true
-                            docker rm ${PROD_NAME} || true
-                            docker run -d --name ${PROD_NAME} ${PROD_BKUP_IMAGE}
-                        """
-                        error("Aborting")
+    echo "Op-9304666r-S5: Prod server fails after update and is rolled back"
+    docker stop 9304666r-prod-svr || true
+    docker rm 9304666r-prod-svr || true
+    docker run -d --name 9304666r-prod-svr -p 33500:80 prod-bkup-image
+"""
+error("Aborting")
                     }
                 }
             }
@@ -122,5 +122,6 @@ error("Aborting")
         }
     }
 }
+
 
 
