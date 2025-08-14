@@ -21,34 +21,38 @@ pipeline {
         }
         // ===== TEMP DEBUG END =====
 
-        /* ---------- S1 ---------- */
-        stage('Op-9304666r-S1') {
-            steps {
-                echo 'Op-9304666r-S1: QA web server is backup and updated'
-                sh '''
-                  docker start 9304666r-qa-svr || true
-                  docker rmi -f qa-bkup-image 2>/dev/null || true
-                  docker commit 9304666r-qa-svr qa-bkup-image
+/* ---------- S1 ---------- */
+stage('Op-9304666r-S1') {
+    steps {
+        echo 'Op-9304666r-S1: QA web server is backup and updated'
+        sh '''
+          # Start QA server if stopped
+          docker start 9304666r-qa-svr || true
+          
+          # Create backup BEFORE making any changes
+          docker rmi -f qa-bkup-image 2>/dev/null || true
+          docker commit 9304666r-qa-svr qa-bkup-image
 
-                  docker exec -u root 9304666r-qa-svr bash -c "
-                    apt-get update -qq &&
-                    apt-get install -y wget apache2 &&
-                    wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
-                    dpkg -i puppet-release-bionic.deb &&
-                    apt-get update -qq &&
-                    apt-get install -y puppet-agent
-                  "
+          # Now perform the update
+          docker exec -u root 9304666r-qa-svr bash -c "
+            apt-get update -qq &&
+            apt-get install -y wget apache2 &&
+            wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
+            dpkg -i puppet-release-bionic.deb &&
+            apt-get update -qq &&
+            apt-get install -y puppet-agent
+          "
 
-                  docker cp index-op-9304666r.html 9304666r-qa-svr:/tmp/
-                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
-                    'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
-                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
-                    'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
-                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
-                    'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
-                '''
-            }
-        }
+          docker cp index-op-9304666r.html 9304666r-qa-svr:/tmp/
+          docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+            'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
+          docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+            'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
+          docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+            'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
+        '''
+    }
+}
 
         /* ---------- S2 ---------- */
         stage('Op-9304666r-S2') {
@@ -244,3 +248,4 @@ pipeline {
         }
     }
 }
+
