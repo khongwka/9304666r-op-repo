@@ -84,51 +84,57 @@ stage('Op-9304666r-S1') {
         }
         // ===== TEMP DEBUG END =====
 
-        /* ---------- S3 ---------- */
-        stage('Op-9304666r-S3') {
-            steps {
-                script {
-                    echo "=== Current HTML inside QA backup image (Rollback content) ==="
-                    sh """
-                        docker run --rm qa-bkup-image cat /var/www/html/index.html || echo '[No file found]'
-                    """
+/* ---------- S3 ---------- */
+stage('Op-9304666r-S3') {
+    steps {
+        script {
+            echo "=== Current HTML inside QA backup image (Rollback content) ==="
+            sh """
+                docker run --rm qa-bkup-image cat /var/www/html/index.html || echo '[No file found]'
+            """
 
-                    echo "=== New HTML from index-op-9304666r.html (Proceed content) ==="
-                    sh """
-                        cat index-op-9304666r.html || echo '[File not found]'
-                    """
+            echo "=== New HTML from index-op-9304666r.html (Proceed content) ==="
+            sh """
+                cat index-op-9304666r.html || echo '[File not found]'
+            """
 
-                    def userChoice = input(
-                        id: 'ProceedOrRollback',
-                        message: 'Choose next action:',
-                        parameters: [
-                            choice(name: 'ACTION', choices: ['Proceed', 'Rollback'], description: 'Select action for Stage 3')
-                        ]
-                    )
+            def userChoice = input(
+                id: 'ProceedOrRollback',
+                message: 'Choose next action:',
+                parameters: [
+                    choice(name: 'ACTION', choices: ['Proceed', 'Rollback'], description: 'Select action for Stage 3')
+                ]
+            )
 
-                    if (userChoice == 'Proceed') {
-                        echo "Op-9304666r-S3: Proceed – updating QA server with new HTML"
-                        sh """
-                            docker cp index-op-9304666r.html ${QA_NAME}:/var/www/html/index.html
-                        """
-                    } else {
-                        echo "Op-9304666r-S3: QA server fails after update and is rolled back"
-                        sh """
-                            docker stop ${QA_NAME} || true
-                            docker rm ${QA_NAME} || true
-                            docker run -d --name ${QA_NAME} -p 33200:80 qa-bkup-image
-                        """
+            if (userChoice == 'Proceed') {
+                echo "Op-9304666r-S3: Proceed – updating QA server with new HTML"
+                sh """
+                    docker cp index-op-9304666r.html 9304666r-qa-svr:/var/www/html/index.html
+                """
+            } else {
+                echo "=== PREVIEW: HTML from qa-bkup-image BEFORE rollback ==="
+                sh """
+                    docker run --rm qa-bkup-image cat /var/www/html/index.html || echo '[No file found]'
+                """
 
-                        echo "=== HTML after rollback ==="
-                        sh """
-                            docker exec ${QA_NAME} cat /var/www/html/index.html || echo '[No file found after rollback]'
-                        """
+                echo "Op-9304666r-S3: QA server fails after update and is rolled back"
+                sh """
+                    docker stop 9304666r-qa-svr || true
+                    docker rm 9304666r-qa-svr || true
+                    docker run -d --name 9304666r-qa-svr -p 33200:80 qa-bkup-image
+                """
 
-                        error("Aborting")
-                    }
-                }
+                echo "=== HTML after rollback (should match backup above) ==="
+                sh """
+                    docker exec 9304666r-qa-svr cat /var/www/html/index.html || echo '[No file found after rollback]'
+                """
+
+                error("Aborting")
             }
         }
+    }
+}
+
 
         /* ---------- S4 ---------- */
         stage('Op-9304666r-S4') {
@@ -248,4 +254,5 @@ stage('Op-9304666r-S1') {
         }
     }
 }
+
 
