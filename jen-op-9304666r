@@ -27,14 +27,17 @@ stage('Op-9304666r-S1') {
         script {
             echo "Op-9304666r-S1: QA web server is backup and updated"
 
+            // Start QA container if stopped
+            sh "docker start ${QA_NAME} || true"
+
+            // Remove old backup image
+            sh "docker rmi -f ${QA_BKUP_IMAGE} || true"
+
+            // Commit current QA container as backup image
+            sh "docker commit ${QA_NAME} ${QA_BKUP_IMAGE}"
+
+            // Install required packages inside QA container
             sh """
-                docker start ${QA_NAME} || true
-                docker rmi -f qa-bkup-image || true
-
-                # ===== FIX: Take backup BEFORE changing anything =====
-                docker commit ${QA_NAME} qa-bkup-image
-
-                # Install dependencies
                 docker exec -u root ${QA_NAME} bash -c '
                     apt-get update -qq &&
                     apt-get install -y wget apache2 &&
@@ -43,25 +46,37 @@ stage('Op-9304666r-S1') {
                     apt-get update -qq &&
                     apt-get install -y puppet-agent
                 '
+            """
 
-                # Copy the new HTML for PROCEED deployment
-                docker cp index-op-9304666r.html ${QA_NAME}:/tmp/
+            // Ensure apache2 is installed & running
+            sh """
+                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
+                    package { "apache2": ensure => installed } ->
+                    service { "apache2": ensure => running, enable => true }
+                '
+            """
 
-                # Apply changes to QA container
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e \\
-                    'package { "apache2": ensure => installed } -> \\
-                     service { "apache2": ensure => running, enable => true }'
+            // Ensure /operate/9304666r exists
+            sh """
+                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
+                    file { "/operate": ensure => directory } ->
+                    file { "/operate/9304666r": ensure => directory }
+                '
+            """
 
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e \\
-                    'file { "/operate": ensure => directory } -> \\
-                     file { "/operate/9304666r": ensure => directory }'
+            // Deploy PROCEED content HTML file
+            sh "docker cp index-op-9304666r.html ${QA_NAME}:/tmp/"
 
-                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e \\
-                    'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
+            // Copy new HTML into apache root
+            sh """
+                docker exec -u root ${QA_NAME} /opt/puppetlabs/bin/puppet apply -e '
+                    file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }
+                '
             """
         }
     }
 }
+
 
         /* ---------- S2 ---------- */
         stage('Op-9304666r-S2') {
@@ -263,6 +278,7 @@ stage('Op-9304666r-S3') {
         }
     }
 }
+
 
 
 
