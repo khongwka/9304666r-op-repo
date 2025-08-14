@@ -30,39 +30,31 @@ pipeline {
         }
 
         stage('Op-9304666r-S3') {
-            steps {
-                sh '''
-                    dos2unix ${SCRIPT} 2>/dev/null || true
-                    chmod +x ${SCRIPT}
-                    bolt script run ${SCRIPT} --targets docker://${QA_NAME}
-                '''
-                script {
-                    def userChoice = input(
-                        id: 'QAChoice',
-                        message: 'QA server update done. Proceed or Rollback?',
-                        parameters: [
-                            choice(
-                                name: 'ACTION',
-                                choices: ['Proceed', 'Rollback'],
-                                description: 'Select action after QA deployment'
-                            )
-                        ]
-                    )
+    steps {
+        script {
+            def userChoice = input(
+                id: 'ProceedOrRollback', message: 'Select action:',
+                parameters: [
+                    choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Rollback QA server'],
+                           description: 'Choose what to do next')
+                ]
+            )
 
-                    if (userChoice == 'Proceed') {
-                        echo "Op-9304666r-S3: Proceed to roll out to Prod server"
-                    } else {
-                        sh """
-    echo "Op-9304666r-S3: QA server fails after update and is rolled back"
-    docker stop ${QA_NAME} || true
-    docker rm ${QA_NAME} || true
-    docker run -d --name ${QA_NAME} -p 33200:80 qa-bkup-image
-"""
-error("Aborting")
-                    }
-                }
+            if (userChoice == 'Proceed to Roll out to Prod server') {
+                echo "Op-9304666r-S3: Proceed to roll out to Prod server"
+                // No rollback here — just move on to Stage 4
+            } else {
+                echo "Op-9304666r-S3: QA server fails after update and is rolled back"
+                sh """
+                    docker stop ${QA_NAME} || true
+                    docker rm ${QA_NAME} || true
+                    docker run -d --name ${QA_NAME} -p 33200:80 ${QA_BKUP_IMAGE}
+                """
+                error("Aborting") // Only abort if rollback is chosen
             }
         }
+    }
+}
 
         stage('Op-9304666r-S4') {
             steps {
@@ -122,6 +114,7 @@ error("Aborting")
         }
     }
 }
+
 
 
 
