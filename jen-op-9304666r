@@ -33,15 +33,16 @@ pipeline {
     steps {
         script {
             def userChoice = input(
-                id: 'ProceedOrRollback', message: 'Proceed to Prod or Rollback QA?',
+                id: 'ProceedOrRollback', message: 'Select action:',
                 parameters: [
-                    choice(name: 'Decision', choices: ['Proceed', 'Rollback'], description: 'Select action')
+                    choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Rollback QA server'],
+                           description: 'Choose what to do next')
                 ]
             )
 
-            if (userChoice == 'Proceed') {
+            if (userChoice == 'Proceed to Roll out to Prod server') {
                 echo "Op-9304666r-S3: Proceed to roll out to Prod server"
-                // Your Proceed code here (no abort)
+                // No rollback here — just move on to Stage 4
             } else {
                 echo "Op-9304666r-S3: QA server fails after update and is rolled back"
                 sh """
@@ -49,7 +50,7 @@ pipeline {
                     docker rm ${QA_NAME} || true
                     docker run -d --name ${QA_NAME} -p 33200:80 ${QA_BKUP_IMAGE}
                 """
-                error("Aborting") // 🚨 This ensures the pipeline stops here
+                error("Aborting") // Only abort if rollback is chosen
             }
         }
     }
