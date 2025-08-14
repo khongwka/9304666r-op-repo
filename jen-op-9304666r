@@ -1,121 +1,240 @@
 pipeline {
     agent any
-    environment {
-        QA_NAME        = "9304666r-qa-svr"
-        PROD_NAME      = "9304666r-prod-svr"
-        QA_BKUP_IMAGE  = "qa-bkup-image-mod"
-        PROD_BKUP_IMAGE= "prod-bkup-image-mod"
-        SCRIPT         = "9304666r_script"
-        HTML_FILE      = "index-op-9304666r.html"
-        REPO_URL       = "https://github.com/khongwka/9304666r-op-repo.git"
-    }
+
     stages {
+
+        // ===== TEMP DEBUG START =====
+        stage('DEBUG-BANNER') {
+            steps {
+                echo '****************************************************'
+                echo '*   TEMP DEBUG: THIS IS THE LATEST Jenkinsfile!    *'
+                echo '*   If you see this, Jenkins is using NEW changes  *'
+                echo '****************************************************'
+                sh 'git rev-parse HEAD || echo "No git commit hash available"'
+            }
+        }
+        // ===== TEMP DEBUG END =====
+
+        /* ---------- S1 ---------- */
         stage('Op-9304666r-S1') {
             steps {
-                checkout scm
+                echo 'Op-9304666r-S1: QA web server is backup and updated'
                 sh '''
-                    test -f ${SCRIPT}
-                    test -f ${HTML_FILE}
+                  docker start 9304666r-qa-svr || true
+                  docker rmi -f qa-bkup-image 2>/dev/null || true
+                  docker commit 9304666r-qa-svr qa-bkup-image
+
+                  docker exec -u root 9304666r-qa-svr bash -c "
+                    apt-get update -qq &&
+                    apt-get install -y wget apache2 &&
+                    wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
+                    dpkg -i puppet-release-bionic.deb &&
+                    apt-get update -qq &&
+                    apt-get install -y puppet-agent
+                  "
+
+                  docker cp index-op-9304666r.html 9304666r-qa-svr:/tmp/
+                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
+                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
+                  docker exec -u root 9304666r-qa-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
                 '''
             }
         }
 
+        /* ---------- S2 ---------- */
         stage('Op-9304666r-S2') {
             steps {
                 sh '''
-                    docker ps --format '{{.Names}}' | grep -x ${QA_NAME}
-                    bolt command run "echo QA OK" --targets docker://${QA_NAME}
+                  docker start 9304666r-qa-svr || true
+                  HOST_IP=$(hostname -I | awk '{print $1}')
+                  echo Using host IP: $HOST_IP
+                  curl -Is http://$HOST_IP:33200 | head -n 1 > qa-result-file
+                  cat qa-result-file | grep -q "HTTP/1.1 200 OK" || { echo "QA server not responding"; exit 1; }
                 '''
+                echo 'Op-9304666r-S2: Checking on whether QA server is running after update'
             }
         }
 
+        // ===== TEMP DEBUG START =====
+        stage('Debug-S3-Content') {
+            steps {
+                sh '''
+                    echo "############################################################"
+                    echo "###########   DEBUG: READING S3 CODE FROM FILE   ###########"
+                    echo "############################################################"
+                    grep -A 20 "stage('Op-9304666r-S3')" jen-op-9304666r || echo "[S3 stage not found in file!]"
+                    echo "############################################################"
+                    echo "###########   END OF DEBUG: S3 CODE ABOVE        ###########"
+                    echo "############################################################"
+                '''
+            }
+        }
+        // ===== TEMP DEBUG END =====
+
+        /* ---------- S3 ---------- */
         stage('Op-9304666r-S3') {
-    steps {
-        script {
-            def userChoice = input(
-                id: 'ProceedOrRollback', message: 'Select action:',
-                parameters: [
-                    choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Rollback QA server'],
-                           description: 'Choose what to do next')
-                ]
-            )
-
-            if (userChoice == 'Proceed to Roll out to Prod server') {
-                echo "Op-9304666r-S3: Proceed to roll out to Prod server"
-                // No rollback here — just move on to Stage 4
-            } else {
-                echo "Op-9304666r-S3: QA server fails after update and is rolled back"
-                sh """
-                    docker stop ${QA_NAME} || true
-                    docker rm ${QA_NAME} || true
-                    docker run -d --name ${QA_NAME} -p 33200:80 ${QA_BKUP_IMAGE}
-                """
-                error("Aborting") // Only abort if rollback is chosen
-            }
-        }
-    }
-}
-
-        stage('Op-9304666r-S4') {
             steps {
-                sh '''
-                    curl -I http://localhost:33200 | grep "200 OK"
-                '''
-            }
-        }
-
-        stage('Op-9304666r-S5') {
-            steps {
-                sh '''
-                    dos2unix ${SCRIPT} 2>/dev/null || true
-                    chmod +x ${SCRIPT}
-                    bolt script run ${SCRIPT} --targets docker://${PROD_NAME}
-                '''
                 script {
+                    echo "=== Current HTML inside QA backup image (Rollback content) ==="
+                    sh """
+                        docker run --rm qa-bkup-image cat /var/www/html/index.html || echo '[No file found]'
+                    """
+
+                    echo "=== New HTML from index-op-9304666r.html (Proceed content) ==="
+                    sh """
+                        cat index-op-9304666r.html || echo '[File not found]'
+                    """
+
                     def userChoice = input(
-                        id: 'ProdChoice',
-                        message: 'Prod server update done. Proceed or Rollback?',
+                        id: 'ProceedOrRollback',
+                        message: 'Choose next action:',
                         parameters: [
-                            choice(
-                                name: 'ACTION',
-                                choices: ['Proceed', 'Rollback'],
-                                description: 'Select action after Prod deployment'
-                            )
+                            choice(name: 'ACTION', choices: ['Proceed', 'Rollback'], description: 'Select action for Stage 3')
                         ]
                     )
 
                     if (userChoice == 'Proceed') {
-                        echo "Op-9304666r-S5: Prod deployment successful"
-                    } else {
+                        echo "Op-9304666r-S3: Proceed – updating QA server with new HTML"
                         sh """
-    echo "Op-9304666r-S5: Prod server fails after update and is rolled back"
-    docker stop 9304666r-prod-svr || true
-    docker rm 9304666r-prod-svr || true
-    docker run -d --name 9304666r-prod-svr -p 33500:80 prod-bkup-image
-"""
-error("Aborting")
+                            docker cp index-op-9304666r.html ${QA_NAME}:/var/www/html/index.html
+                        """
+                    } else {
+                        echo "Op-9304666r-S3: QA server fails after update and is rolled back"
+                        sh """
+                            docker stop ${QA_NAME} || true
+                            docker rm ${QA_NAME} || true
+                            docker run -d --name ${QA_NAME} -p 33200:80 qa-bkup-image
+                        """
+
+                        echo "=== HTML after rollback ==="
+                        sh """
+                            docker exec ${QA_NAME} cat /var/www/html/index.html || echo '[No file found after rollback]'
+                        """
+
+                        error("Aborting")
                     }
                 }
             }
         }
 
-        stage('Op-9304666r-S6') {
+        /* ---------- S4 ---------- */
+        stage('Op-9304666r-S4') {
             steps {
+                echo 'Op-9304666r-S4: prod web server is backup and updated'
                 sh '''
-                    curl -I http://localhost:33500 | grep "200 OK"
+                  docker start 9304666r-prod-svr || true
+                  docker rmi -f prod-bkup-image 2>/dev/null || true
+                  docker commit 9304666r-prod-svr prod-bkup-image
+
+                  docker exec -u root 9304666r-prod-svr bash -c "
+                    apt-get update -qq &&
+                    apt-get install -y wget apache2 &&
+                    wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
+                    dpkg -i puppet-release-bionic.deb &&
+                    apt-get update -qq &&
+                    apt-get install -y puppet-agent
+                  "
+
+                  docker cp index-op-9304666r.html 9304666r-prod-svr:/tmp/
+                  docker exec -u root 9304666r-prod-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
+                  docker exec -u root 9304666r-prod-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
+                  docker exec -u root 9304666r-prod-svr /opt/puppetlabs/bin/puppet apply -e \
+                    'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
                 '''
             }
         }
 
+        /* ---------- S5 ---------- */
+        stage('Op-9304666r-S5') {
+            steps {
+                sh """
+                    echo "Op-9304666r-S5: Starting Prod container if not already running"
+
+                    docker ps --format '{{.Names}}' | grep -x ${PROD_NAME} >/dev/null && docker stop ${PROD_NAME} || true
+                    docker ps -a --format '{{.Names}}' | grep -x ${PROD_NAME} >/dev/null && docker rm ${PROD_NAME} || true
+
+                    docker run -d --name ${PROD_NAME} -p 33500:80 ${PROD_BKUP_IMAGE}
+
+                    echo "Waiting for Prod container to respond on port 33500..."
+                    for i in {1..30}; do
+                        if curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200"; then
+                            echo "Prod container is up."
+                            break
+                        fi
+                        echo "Still waiting... (\$i)"
+                        sleep 2
+                    done
+
+                    if ! curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200"; then
+                        echo "ERROR: Prod container did not respond in time."
+                        exit 1
+                    fi
+
+                    dos2unix 9304666r_script
+                    chmod +x 9304666r_script
+                    bolt script run 9304666r_script --targets docker://${PROD_NAME}
+                """
+            }
+        }
+
+        /* ---------- S6 ---------- */
+        stage('Op-9304666r-S6') {
+            steps {
+                script {
+                    def proceed = input(
+                        id: 'prodProceed',
+                        message: 'Prod server returned 200 OK. Release to production?',
+                        ok: 'Proceed',
+                        parameters: [
+                            choice(name: 'CHOICE',
+                                   choices: ['Proceed', 'Rollback'],
+                                   description: 'Choose action for Prod server')
+                        ]
+                    )
+                    if (proceed == 'Proceed') {
+                        echo 'Op-9304666r-S6: Proceed to release Prod web server to production'
+                    } else {
+                        echo 'Op-9304666r-S6: Prod web server is rolled back'
+                        sh '''
+                          docker stop 9304666r-prod-svr || true
+                          docker rm -f 9304666r-prod-svr || true
+                          docker run -d --name 9304666r-prod-svr \
+                            --hostname 9304666r-prod-svr.localdomain \
+                            --network qa-net \
+                            --ip 192.168.100.220 \
+                            -p 33500:80 \
+                            prod-bkup-image \
+                            bash -c "apache2ctl -D FOREGROUND"
+
+                          timeout 90 bash -c '
+                            until curl -Is http://localhost:33500 | grep -q "HTTP/1.1 200 OK"; do
+                              echo "$(date) Waiting for Prod rollback server..."
+                              sleep 3
+                            done
+                          '
+                        '''
+                        error('Aborting pipeline')
+                    }
+                }
+            }
+        }
+
+        /* ---------- S7 ---------- */
         stage('Op-9304666r-S7') {
             steps {
-                echo "Op-9304666r-S7: Cleanup or final reporting here"
+                echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
             }
         }
     }
+
+    post {
+        always {
+            echo '9304666r-operate-pipeline finished'
+        }
+    }
 }
-
-
-
-
-
