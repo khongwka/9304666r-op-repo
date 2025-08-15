@@ -113,65 +113,68 @@ stage('Op-9304666r-S4') {
 /* ---------- S5 ---------- */
 stage('Op-9304666r-S5') {
     steps {
-        script {
-            def choice = input(
-                id: 'ProdProceedOrRollback',
-                message: 'Deploy new Prod or rollback to previous version?',
-                parameters: [
-                    choice(name: 'ACTION', choices: ['Proceed', 'Rollback'], description: 'Select action for Production')
-                ]
-            )
-
-            if (choice == 'Proceed') {
-                echo "Op-9304666r-S5: Starting Prod with new image"
-                sh """
-                  docker rm -f 9304666r-prod-svr || true
-                  docker run -d --name 9304666r-prod-svr -p 33500:80 prod-bkup-image
-                """
-            } else {
-                echo "Op-9304666r-S5: Rolling back Prod to previous version"
-                sh """
-                  docker rm -f 9304666r-prod-svr || true
-                  docker run -d --name 9304666r-prod-svr -p 33500:80 prod-bkup-prev
-                """
-            }
-        }
+        sh '''
+          docker start 9304666r-prod-svr || true
+          HOST_IP=$(hostname -I | awk '{print $1}')
+          echo Using host IP: $HOST_IP
+          curl -Is http://$HOST_IP:33500 | head -n 1 > prod-result-file
+          cat prod-result-file | grep -q "HTTP/1.1 200 OK" || { echo "Prod server not responding"; exit 1; }
+        '''
+        echo 'Op-9304666r-S5: Checking on whether Prod server is running after update'
     }
 }
 
 /* ---------- S6 ---------- */
 stage('Op-9304666r-S6') {
     steps {
-        echo 'Op-9304666r-S6: Verifying Prod server is up and serving content'
-        sh """
-          for i in {1..30}; do
-              if curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200"; then
-                  echo "Prod container is up."
-                  exit 0
-              fi
-              echo "Still waiting... (\$i)"
-              sleep 2
-          done
-          echo "ERROR: Prod container did not respond in time."
-          exit 1
-        """
+        script {
+            def choice = input(
+                id: 'prodChoice',
+                message: 'Prod server returned 200 OK. Release to production or Rollback?',
+                parameters: [
+                    choice(
+                        name: 'ACTION',
+                        choices: ['Proceed', 'Rollback'],
+                        description: 'Choose action for Prod server'
+                    )
+                ]
+            )
+
+            if (choice == 'Proceed') {
+                echo 'Op-9304666r-S6: Proceed to release Prod web server to production'
+            } else {
+                echo 'Op-9304666r-S6: Prod web server is rolled back'
+                sh '''
+                  docker stop 9304666r-prod-svr || true
+                  docker rm -f 9304666r-prod-svr || true
+                  docker run -d --name 9304666r-prod-svr \
+                    --hostname 9304666r-prod-svr.localdomain \
+                    --network qa-net \
+                    --ip 192.168.100.220 \
+                    -p 33500:80 \
+                    prod-bkup-image \
+                    bash -c "apache2ctl -D FOREGROUND"
+
+                  timeout 90 bash -c '
+                    until curl -Is http://localhost:33500 | grep -q "HTTP/1.1 200 OK"; do
+                      echo "$(date) Waiting for Prod rollback server..."
+                      sleep 3
+                    done
+                  '
+                '''
+                error('Aborting')
+            }
+        }
     }
 }
 
-
-    /* ---------- S7 ---------- */
-    stage('Op-9304666r-S7') {
-      steps {
+/* ---------- S7 ---------- */
+stage('Op-9304666r-S7') {
+    steps {
         echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
-      }
     }
-  }
-
-  post {
-    always {
-      echo '9304666r-operate-pipeline finished'
-    }
-  }
 }
+
+
 
 
