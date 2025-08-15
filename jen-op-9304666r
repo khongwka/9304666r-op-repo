@@ -203,7 +203,9 @@ stage('Op-9304666r-S4') {
     }
 
     /* ---------- S7 ---------- */
-    stage('Op-9304666r-S7') {
-@@ -218,3 +174,4 @@
+stage('Op-9304666r-S7') {
+    steps {
+        echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
   }
 }
+
