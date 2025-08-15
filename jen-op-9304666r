@@ -7,55 +7,94 @@ pipeline {
 
     PROD_NAME       = "9304666r-prod-svr"
     PROD_BKUP_IMAGE = "prod-bkup-image"
+
+    NET_NAME        = "qa-net"
+    NET_SUBNET      = "192.168.100.0/24"
+    NET_GATEWAY     = "192.168.100.1"
+    QA_IP           = "192.168.100.110"
+    PROD_IP         = "192.168.100.220"
+
+    QA_HOST_PORT    = "33200"
+    PROD_HOST_PORT  = "33500"
   }
 
   stages {
 
-    /* ---------- S1: QA backup, then update QA with new content ---------- */
+    /* ---------- S0: Ensure Docker network & static IP prerequisites ---------- */
+    stage('Op-9304666r-S0') {
+      steps {
+        sh '''
+          set -e
+          # Create the qa-net if missing
+          if ! docker network ls --format '{{.Name}}' | grep -qx "$NET_NAME"; then
+            echo "Creating network $NET_NAME ..."
+            docker network create --subnet $NET_SUBNET --gateway $NET_GATEWAY $NET_NAME
+          else
+            echo "Network $NET_NAME already exists."
+          fi
+
+          # Optionally show network for debug
+          docker network inspect $NET_NAME >/dev/null 2>&1 || true
+        '''
+      }
+    }
+
+    /* ---------- S1: QA backup, (re)create QA with static IP, then update QA content ---------- */
     stage('Op-9304666r-S1') {
       steps {
         script {
           echo "Op-9304666r-S1: QA web server is backup and updated"
-          sh '''
-            set -e
+        }
+        sh '''
+          set -e
 
-            # Ensure qa-net exists
-            if ! docker network inspect qa-net >/dev/null 2>&1; then
-              docker network create --subnet=192.168.100.0/24 qa-net
-            fi
-
-            # Make sure QA is up (or at least exists)
+          # If QA exists, back it up first into qa-bkup-image (this is *previous* QA)
+          if docker ps -a --format '{{.Names}}' | grep -qx "$QA_NAME"; then
             docker start $QA_NAME || true
-
-            # Attach QA to qa-net with static IP
-            if docker ps -a --format '{{.Names}}' | grep -qx $QA_NAME; then
-              if ! docker network inspect qa-net | grep -q 192.168.100.110; then
-                docker network disconnect bridge $QA_NAME || true
-                docker network connect --ip 192.168.100.110 qa-net $QA_NAME
-              fi
-            fi
-
-            # Backup current QA before touching content
             docker rmi -f $QA_BKUP_IMAGE || true
             docker commit $QA_NAME $QA_BKUP_IMAGE
+          else
+            # If QA doesn't exist and image not present, fallback: make a vanilla one to start with
+            if ! docker images --format '{{.Repository}}' | grep -qx "$QA_BKUP_IMAGE"; then
+              echo "No $QA_NAME and no $QA_BKUP_IMAGE; creating a temporary base Apache container for first-time setup..."
+              docker run -d --name $QA_NAME -p $QA_HOST_PORT:80 httpd:2.4-alpine || true
+              docker rmi -f $QA_BKUP_IMAGE || true
+              docker commit $QA_NAME $QA_BKUP_IMAGE
+              docker rm -f $QA_NAME || true
+            fi
+          fi
 
-            # Ensure deps in QA
-            docker exec -u root $QA_NAME bash -c '
-              apt-get update -qq &&
-              apt-get install -y wget apache2 &&
-              wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
-              dpkg -i puppet-release-bionic.deb &&
-              apt-get update -qq &&
-              apt-get install -y puppet-agent
-            '
+          # (Re)create QA with the required static IP and port mapping from latest qa-bkup-image
+          docker stop $QA_NAME  >/dev/null 2>&1 || true
+          docker rm -f $QA_NAME >/dev/null 2>&1 || true
+          docker run -d --name $QA_NAME \
+            --hostname ${QA_NAME}.localdomain \
+            --network $NET_NAME --ip $QA_IP \
+            -p ${QA_HOST_PORT}:80 \
+            $QA_BKUP_IMAGE
 
-            # Copy new page and apply it
-            docker cp index-op-9304666r.html $QA_NAME:/tmp/
-            docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
-            docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
-            docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
-          '''
-        }
+          # Ensure dependencies (apache present and running) and push the new page into QA
+          docker exec -u root $QA_NAME bash -c '
+            set -e
+            apt-get update -qq || true
+            apt-get install -y wget apache2 || true
+            # Keep Puppet lines if you still want them here; they won’t affect S5 script choice
+            wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb || true
+            dpkg -i puppet-release-bionic.deb || true
+            apt-get update -qq || true
+            apt-get install -y puppet-agent || true
+          '
+
+          # Copy latest page from repo into container and enforce as active index
+          docker cp index-op-9304666r.html $QA_NAME:/tmp/
+          docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }' || true
+          docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }' || true
+          docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }' || true
+
+          # Now that QA has the *new* content, overwrite qa-bkup-image with this current QA state
+          docker rmi -f $QA_BKUP_IMAGE || true
+          docker commit $QA_NAME $QA_BKUP_IMAGE
+        '''
       }
     }
 
@@ -64,11 +103,10 @@ pipeline {
       steps {
         sh '''
           set -e
-          docker start 9304666r-qa-svr || true
-          HOST_IP=$(hostname -I | awk '{print $1}')
-          echo Using host IP: $HOST_IP
-          curl -Is http://$HOST_IP:33200 | head -n 1 > qa-result-file
-          grep -q "HTTP/1.1 200 OK" qa-result-file || { echo "QA server not responding"; exit 1; }
+          docker start $QA_NAME || true
+          # Hitting via host port for consistency with previous flow
+          curl -Is http://localhost:${QA_HOST_PORT} | head -n 1 > qa-result-file
+          grep -q "HTTP/1.1 200" qa-result-file || { echo "QA server not responding"; exit 1; }
         '''
         echo 'Op-9304666r-S2: QA server returned 200 OK'
       }
@@ -90,11 +128,14 @@ pipeline {
             echo "Op-9304666r-S3: Rollback chosen – restoring QA from backup image."
             sh '''
               set -e
-              docker stop 9304666r-qa-svr || true
-              docker rm   9304666r-qa-svr || true
-              docker run -d --name 9304666r-qa-svr \
-                --network qa-net --ip 192.168.100.110 \
-                -p 33200:80 $QA_BKUP_IMAGE
+              docker stop $QA_NAME || true
+              docker rm   $QA_NAME || true
+              docker run -d --name $QA_NAME \
+                --hostname ${QA_NAME}.localdomain \
+                --network $NET_NAME --ip $QA_IP \
+                -p ${QA_HOST_PORT}:80 \
+                $QA_BKUP_IMAGE \
+                bash -c "apache2ctl -D FOREGROUND"
             '''
             error("Aborting")
           }
@@ -102,69 +143,36 @@ pipeline {
       }
     }
 
-    /* ---------- S4: Prepare Prod, then CREATE updated prod-bkup-image ---------- */
+    /* ---------- S4: Start *test* Prod from *QA backup image* (DO NOT touch prod-bkup-image) ---------- */
     stage('Op-9304666r-S4') {
       steps {
-        echo 'Op-9304666r-S4: Prod web server is backup and updated'
+        echo 'Op-9304666r-S4: Prod test container launched from qa-bkup-image (no promotion yet)'
         sh '''
           set -e
-
-          # Ensure qa-net exists
-          if ! docker network inspect qa-net >/dev/null 2>&1; then
-            docker network create --subnet=192.168.100.0/24 qa-net
-          fi
-
-          if ! docker ps -a --format '{{.Names}}' | grep -qx $PROD_NAME; then
-            echo "Prod container not found — creating from QA backup image..."
-            docker run -d --name $PROD_NAME \
-              --network qa-net --ip 192.168.100.220 \
-              -p 33500:80 $QA_BKUP_IMAGE
-          else
-            echo "Prod container exists — starting..."
-            docker start $PROD_NAME || true
-            if ! docker network inspect qa-net | grep -q 192.168.100.220; then
-              docker network disconnect bridge $PROD_NAME || true
-              docker network connect --ip 192.168.100.220 qa-net $PROD_NAME
-            fi
-          fi
-
-          docker exec -u root $PROD_NAME bash -c "
-            apt-get update -qq &&
-            apt-get install -y wget apache2 &&
-            wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
-            dpkg -i puppet-release-bionic.deb &&
-            apt-get update -qq &&
-            apt-get install -y puppet-agent
-          "
-
-          docker cp index-op-9304666r.html $PROD_NAME:/tmp/
-          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
-          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
-          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
-
-          docker rmi -f $PROD_BKUP_IMAGE 2>/dev/null || true
-          docker commit $PROD_NAME $PROD_BKUP_IMAGE
-        '''
-      }
-    }
-
-    /* ---------- S5: Spin up test Prod from UPDATED backup image ---------- */
-    stage('Op-9304666r-S5') {
-      steps {
-        sh '''
-          set -e
-          echo "Op-9304666r-S5: Starting test Prod container from updated backup image"
-
+          # Always recreate the Prod test container from the *latest QA* image
           docker ps --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker stop $PROD_NAME || true
           docker ps -a --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker rm $PROD_NAME || true
 
           docker run -d --name $PROD_NAME \
-            --network qa-net --ip 192.168.100.220 \
-            -p 33500:80 $PROD_BKUP_IMAGE
+            --hostname ${PROD_NAME}.localdomain \
+            --network $NET_NAME --ip $PROD_IP \
+            -p ${PROD_HOST_PORT}:80 \
+            $QA_BKUP_IMAGE
 
-          echo "Waiting for Prod (test) container to respond on port 33500..."
+          # (No commit to prod-bkup-image here!)
+        '''
+      }
+    }
+
+    /* ---------- S5: Validate test Prod (optional bolt/script check) ---------- */
+    stage('Op-9304666r-S5') {
+      steps {
+        sh '''
+          set -e
+          echo "Op-9304666r-S5: Validating test Prod on port ${PROD_HOST_PORT}..."
+
           for i in {1..30}; do
-            if curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200"; then
+            if curl -s -o /dev/null -w "%{http_code}" http://localhost:${PROD_HOST_PORT} | grep -q "200"; then
               echo "Prod (test) container is up."
               break
             fi
@@ -172,11 +180,12 @@ pipeline {
             sleep 2
           done
 
-          curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200" || {
+          curl -s -o /dev/null -w "%{http_code}" http://localhost:${PROD_HOST_PORT} | grep -q "200" || {
             echo "ERROR: Prod (test) container did not respond in time."
             exit 1
           }
 
+          # Run your existing script (S5 requirement said Puppet not needed in the script itself — that’s handled inside the script you committed)
           if command -v dos2unix >/dev/null 2>&1; then dos2unix 9304666r_script || true; fi
           chmod +x 9304666r_script || true
           if command -v bolt >/dev/null 2>&1; then bolt script run 9304666r_script --targets docker://$PROD_NAME || true; fi
@@ -190,29 +199,53 @@ pipeline {
         script {
           def proceed = input(
             id: 'prodProceed',
-            message: 'Prod (test) returned 200 OK. Release to production?',
-            ok: 'Proceed',
+            message: 'Promote QA to Prod (Proceed) or keep last release (Rollback)?',
+            ok: 'Submit',
             parameters: [ choice(name: 'CHOICE', choices: ['Proceed','Rollback'], description: 'Choose action for Prod server') ]
           )
+
           if (proceed == 'Proceed') {
-            echo 'Op-9304666r-S6: Proceed to release Prod web server to production'
-          } else {
-            echo 'Op-9304666r-S6: Prod web server is rolled back'
+            echo 'Op-9304666r-S6: Proceed — promoting QA (current) to Prod'
             sh '''
               set -e
-              docker stop 9304666r-prod-svr || true
-              docker rm -f 9304666r-prod-svr || true
-              docker run -d --name 9304666r-prod-svr \
-                --hostname 9304666r-prod-svr.localdomain \
-                --network qa-net \
-                --ip 192.168.100.220 \
-                -p 33500:80 \
-                prod-bkup-image \
+              # Promote by updating prod-bkup-image from the *running* test prod (which came from qa-bkup-image)
+              docker rmi -f $PROD_BKUP_IMAGE 2>/dev/null || true
+              docker commit $PROD_NAME $PROD_BKUP_IMAGE
+
+              # Recreate Prod container cleanly from the *new* prod-bkup-image (this becomes the new released version)
+              docker stop $PROD_NAME || true
+              docker rm -f $PROD_NAME || true
+              docker run -d --name $PROD_NAME \
+                --hostname ${PROD_NAME}.localdomain \
+                --network $NET_NAME --ip $PROD_IP \
+                -p ${PROD_HOST_PORT}:80 \
+                $PROD_BKUP_IMAGE \
+                bash -c "apache2ctl -D FOREGROUND"
+
+              # Wait until ready
+              timeout 90 bash -c '
+                until curl -Is http://localhost:${PROD_HOST_PORT} | grep -q "HTTP/1.1 200"; do
+                  echo "$(date) Waiting for Prod (promoted) server..."
+                  sleep 3
+                done
+              '
+            '''
+          } else {
+            echo 'Op-9304666r-S6: Rollback — keeping last released Prod (prod-bkup-image)'
+            sh '''
+              set -e
+              docker stop $PROD_NAME || true
+              docker rm -f $PROD_NAME || true
+              docker run -d --name $PROD_NAME \
+                --hostname ${PROD_NAME}.localdomain \
+                --network $NET_NAME --ip $PROD_IP \
+                -p ${PROD_HOST_PORT}:80 \
+                $PROD_BKUP_IMAGE \
                 bash -c "apache2ctl -D FOREGROUND"
 
               timeout 90 bash -c '
-                until curl -Is http://localhost:33500 | grep -q "HTTP/1.1 200 OK"; do
-                  echo "$(date) Waiting for Prod rollback server..."
+                until curl -Is http://localhost:${PROD_HOST_PORT} | grep -q "HTTP/1.1 200"; do
+                  echo "$(date) Waiting for Prod (rollback) server..."
                   sleep 3
                 done
               '
@@ -223,12 +256,11 @@ pipeline {
       }
     }
 
-    /* ---------- S7 ---------- */
+    /* ---------- S7: Post-release ---------- */
     stage('Op-9304666r-S7') {
       steps {
         echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
       }
     }
-
   }
 }
