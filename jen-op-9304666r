@@ -19,8 +19,21 @@ pipeline {
           sh '''
             set -e
 
+            # Ensure qa-net exists
+            if ! docker network inspect qa-net >/dev/null 2>&1; then
+              docker network create --subnet=192.168.100.0/24 qa-net
+            fi
+
             # Make sure QA is up (or at least exists)
             docker start $QA_NAME || true
+
+            # Attach QA to qa-net with static IP
+            if docker ps -a --format '{{.Names}}' | grep -qx $QA_NAME; then
+              if ! docker network inspect qa-net | grep -q 192.168.100.110; then
+                docker network disconnect bridge $QA_NAME || true
+                docker network connect --ip 192.168.100.110 qa-net $QA_NAME
+              fi
+            fi
 
             # Backup current QA before touching content
             docker rmi -f $QA_BKUP_IMAGE || true
@@ -79,55 +92,63 @@ pipeline {
               set -e
               docker stop 9304666r-qa-svr || true
               docker rm   9304666r-qa-svr || true
-              docker run -d --name 9304666r-qa-svr -p 33200:80 $QA_BKUP_IMAGE
+              docker run -d --name 9304666r-qa-svr \
+                --network qa-net --ip 192.168.100.110 \
+                -p 33200:80 $QA_BKUP_IMAGE
             '''
-            // Fail the pipeline after rollback, as per your previous behavior
             error("Aborting")
           }
         }
       }
     }
 
-/* ---------- S4: Prepare Prod, then CREATE updated prod-bkup-image ---------- */
-stage('Op-9304666r-S4') {
-  steps {
-    echo 'Op-9304666r-S4: Prod web server is backup and updated'
-    sh '''
-      set -e
+    /* ---------- S4: Prepare Prod, then CREATE updated prod-bkup-image ---------- */
+    stage('Op-9304666r-S4') {
+      steps {
+        echo 'Op-9304666r-S4: Prod web server is backup and updated'
+        sh '''
+          set -e
 
-      # If Prod container doesn't exist, create it from QA backup image
-      if ! docker ps -a --format '{{.Names}}' | grep -qx $PROD_NAME; then
-        echo "Prod container not found — creating from QA backup image..."
-        docker run -d --name $PROD_NAME -p 33500:80 $QA_BKUP_IMAGE
-      else
-        echo "Prod container exists — starting..."
-        docker start $PROD_NAME || true
-      fi
+          # Ensure qa-net exists
+          if ! docker network inspect qa-net >/dev/null 2>&1; then
+            docker network create --subnet=192.168.100.0/24 qa-net
+          fi
 
-      # Ensure deps in Prod
-      docker exec -u root $PROD_NAME bash -c "
-        apt-get update -qq &&
-        apt-get install -y wget apache2 &&
-        wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
-        dpkg -i puppet-release-bionic.deb &&
-        apt-get update -qq &&
-        apt-get install -y puppet-agent
-      "
+          if ! docker ps -a --format '{{.Names}}' | grep -qx $PROD_NAME; then
+            echo "Prod container not found — creating from QA backup image..."
+            docker run -d --name $PROD_NAME \
+              --network qa-net --ip 192.168.100.220 \
+              -p 33500:80 $QA_BKUP_IMAGE
+          else
+            echo "Prod container exists — starting..."
+            docker start $PROD_NAME || true
+            if ! docker network inspect qa-net | grep -q 192.168.100.220; then
+              docker network disconnect bridge $PROD_NAME || true
+              docker network connect --ip 192.168.100.220 qa-net $PROD_NAME
+            fi
+          fi
 
-      # Push the same page to Prod container
-      docker cp index-op-9304666r.html $PROD_NAME:/tmp/
-      docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
-      docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
-      docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
+          docker exec -u root $PROD_NAME bash -c "
+            apt-get update -qq &&
+            apt-get install -y wget apache2 &&
+            wget -q https://apt.puppetlabs.com/puppet-release-bionic.deb &&
+            dpkg -i puppet-release-bionic.deb &&
+            apt-get update -qq &&
+            apt-get install -y puppet-agent
+          "
 
-      # Commit updated Prod container to prod-bkup-image
-      docker rmi -f $PROD_BKUP_IMAGE 2>/dev/null || true
-      docker commit $PROD_NAME $PROD_BKUP_IMAGE
-    '''
-  }
-}
+          docker cp index-op-9304666r.html $PROD_NAME:/tmp/
+          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
+          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
+          docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
 
-/* ---------- S5: Spin up test Prod from the UPDATED backup image ---------- */
+          docker rmi -f $PROD_BKUP_IMAGE 2>/dev/null || true
+          docker commit $PROD_NAME $PROD_BKUP_IMAGE
+        '''
+      }
+    }
+
+    /* ---------- S5: Spin up test Prod from UPDATED backup image ---------- */
     stage('Op-9304666r-S5') {
       steps {
         sh '''
@@ -137,7 +158,9 @@ stage('Op-9304666r-S4') {
           docker ps --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker stop $PROD_NAME || true
           docker ps -a --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker rm $PROD_NAME || true
 
-          docker run -d --name $PROD_NAME -p 33500:80 $PROD_BKUP_IMAGE
+          docker run -d --name $PROD_NAME \
+            --network qa-net --ip 192.168.100.220 \
+            -p 33500:80 $PROD_BKUP_IMAGE
 
           echo "Waiting for Prod (test) container to respond on port 33500..."
           for i in {1..30}; do
@@ -154,7 +177,6 @@ stage('Op-9304666r-S4') {
             exit 1
           }
 
-          # Optional: run your validations
           if command -v dos2unix >/dev/null 2>&1; then dos2unix 9304666r_script || true; fi
           chmod +x 9304666r_script || true
           if command -v bolt >/dev/null 2>&1; then bolt script run 9304666r_script --targets docker://$PROD_NAME || true; fi
@@ -174,7 +196,6 @@ stage('Op-9304666r-S4') {
           )
           if (proceed == 'Proceed') {
             echo 'Op-9304666r-S6: Proceed to release Prod web server to production'
-            // Add your real prod cutover here if different from 33500
           } else {
             echo 'Op-9304666r-S6: Prod web server is rolled back'
             sh '''
@@ -203,11 +224,11 @@ stage('Op-9304666r-S4') {
     }
 
     /* ---------- S7 ---------- */
-stage('Op-9304666r-S7') {
-    steps {
+    stage('Op-9304666r-S7') {
+      steps {
         echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
-  }
-}
+      }
+    }
 
-}
+  }
 }
