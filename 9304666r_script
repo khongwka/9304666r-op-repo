@@ -5,23 +5,36 @@ export DEBIAN_FRONTEND=noninteractive
 
 # 1. Ensure puppet, git, apache2, and curl are installed
 apt-get update -y
-apt-get install -y puppet git apache2 curl || true
+
+# COMMENT OUT install Puppet, added install apache2 8/15
+# apt-get install -y puppet git apache2 curl || true
+apt-get install -y git apache2 curl || true
+# COMMENT OUT install Puppet, added install apache2 8/15
 
 # 2. Ensure apache2 package is installed via puppet
-puppet resource package apache2 ensure=installed
+# puppet resource package apache2 ensure=installed
 
 # 3. Start and enable apache2 service via puppet
-if ! puppet resource service apache2 ensure=running enable=true; then
-  # Fallback if service command fails (minimal containers without systemd)
-  mkdir -p /var/run/apache2
-  nohup /usr/sbin/apache2ctl -D FOREGROUND >/var/log/apache2/fg.log 2>&1 &
-  sleep 2
-fi
+# if ! puppet resource service apache2 ensure=running enable=true; then
+#  # Fallback if service command fails (minimal containers without systemd)
+#  mkdir -p /var/run/apache2
+#  nohup /usr/sbin/apache2ctl -D FOREGROUND >/var/log/apache2/fg.log 2>&1 &
+#  sleep 2
+# fi
+
+# Fallback: always start Apache without Puppet for now
+mkdir -p /var/run/apache2
+nohup /usr/sbin/apache2ctl -D FOREGROUND >/var/log/apache2/fg.log 2>&1 &
+sleep 2
 
 # 4. Remove and recreate /operate/9304666r
-puppet resource file /operate ensure=directory
-puppet resource file /operate/9304666r ensure=absent
-puppet resource file /operate/9304666r ensure=directory
+# puppet resource file /operate ensure=directory
+# puppet resource file /operate/9304666r ensure=absent
+# puppet resource file /operate/9304666r ensure=directory
+mkdir -p /operate
+rm -rf /operate/9304666r
+mkdir -p /operate/9304666r
+
 
 # 5. Clone the GitHub repo into /operate/9304666r
 if [ -d /operate/9304666r/.git ]; then
@@ -39,7 +52,10 @@ if [ -f "$DST" ]; then
 fi
 
 # 7. Replace /var/www/html/index.html with index-op-9304666r.html via puppet
-puppet resource file "$DST" ensure=file source="$SRC" owner='www-data' group='www-data' mode='0644'
+# puppet resource file "$DST" ensure=file source="$SRC" owner='www-data' group='www-data' mode='0644'
+cp -f "$SRC" "$DST"
+chown www-data:www-data "$DST"
+chmod 0644 "$DST"
 
 # 8. Optional local test
 curl -Is http://localhost | head -n 1 || true
