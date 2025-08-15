@@ -173,6 +173,7 @@ stage('Op-9304666r-S7') {
     steps {
         echo 'Op-9304666r-S7: Prod web server is monitored and ready to serve.'
     }
+  }
 }
 
 
