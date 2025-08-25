@@ -18,10 +18,15 @@ pipeline {
           echo "Op-9304666r-S1: QA web server is backup and updated"
           sh '''
             set -e
+
+            # Make sure QA is up (or at least exists)
             docker start $QA_NAME || true
+
+            # Backup current QA before touching content
             docker rmi -f $QA_BKUP_IMAGE || true
             docker commit $QA_NAME $QA_BKUP_IMAGE
 
+            # Ensure deps in QA
             docker exec -u root $QA_NAME bash -c '
               apt-get update -qq &&
               apt-get install -y wget apache2 &&
@@ -31,6 +36,7 @@ pipeline {
               apt-get install -y puppet-agent
             '
 
+            # Copy new page and apply it
             docker cp index-op-9304666r.html $QA_NAME:/tmp/
             docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
             docker exec -u root $QA_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
@@ -49,8 +55,10 @@ pipeline {
           HOST_IP=$(hostname -I | awk '{print $1}')
           echo Using host IP: $HOST_IP
 
-          curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file
+          # Write result to /tmp/qa-result-file (requirement)
+          sudo sh -c "curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file"
           cat /tmp/qa-result-file
+
           grep -q "HTTP/1.1 200 OK" /tmp/qa-result-file || { echo "QA server not responding"; exit 1; }
         '''
         echo 'Op-9304666r-S2: QA server returned 200 OK'
@@ -83,19 +91,23 @@ pipeline {
       }
     }
 
-    /* ---------- S4: Prepare Prod ---------- */
+    /* ---------- S4: Prepare Prod, then CREATE updated prod-bkup-image ---------- */
     stage('Op-9304666r-S4') {
       steps {
         echo 'Op-9304666r-S4: Prod web server is backup and updated'
         sh '''
           set -e
+
+          # If Prod container doesn't exist, create it from QA backup image
           if ! docker ps -a --format '{{.Names}}' | grep -qx $PROD_NAME; then
             echo "Prod container not found — creating from QA backup image..."
             docker run -d --name $PROD_NAME -p 33500:80 $QA_BKUP_IMAGE
           else
+            echo "Prod container exists — starting..."
             docker start $PROD_NAME || true
           fi
 
+          # Ensure deps in Prod
           docker exec -u root $PROD_NAME bash -c "
             apt-get update -qq &&
             apt-get install -y wget apache2 &&
@@ -105,25 +117,29 @@ pipeline {
             apt-get install -y puppet-agent
           "
 
+          # Push the same page to Prod container
           docker cp index-op-9304666r.html $PROD_NAME:/tmp/
           docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'package { "apache2": ensure => installed } -> service { "apache2": ensure => running, enable => true }'
           docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/operate": ensure => directory } -> file { "/operate/9304666r": ensure => directory }'
           docker exec -u root $PROD_NAME /opt/puppetlabs/bin/puppet apply -e 'file { "/var/www/html/index.html": source => "/tmp/index-op-9304666r.html", ensure => file }'
 
+          # Commit updated Prod container to prod-bkup-image
           docker rmi -f $PROD_BKUP_IMAGE 2>/dev/null || true
           docker commit $PROD_NAME $PROD_BKUP_IMAGE
         '''
       }
     }
 
-    /* ---------- S5: Spin up test Prod ---------- */
+    /* ---------- S5: Spin up test Prod from the UPDATED backup image ---------- */
     stage('Op-9304666r-S5') {
       steps {
         sh '''
           set -e
           echo "Op-9304666r-S5: Starting test Prod container from updated backup image"
+
           docker ps --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker stop $PROD_NAME || true
           docker ps -a --format '{{.Names}}' | grep -x $PROD_NAME >/dev/null && docker rm $PROD_NAME || true
+
           docker run -d --name $PROD_NAME -p 33500:80 $PROD_BKUP_IMAGE
 
           echo "Waiting for Prod (test) container to respond on port 33500..."
@@ -136,16 +152,14 @@ pipeline {
             sleep 2
           done
 
-          curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file
-          cat /tmp/prod-result-file
-          grep -q "HTTP/1.1 200 OK" /tmp/prod-result-file || {
-            echo "ERROR: Prod (test) container did not respond with 200 OK."
+          curl -s -o /dev/null -w "%{http_code}" http://localhost:33500 | grep -q "200" || {
+            echo "ERROR: Prod (test) container did not respond in time."
             exit 1
           }
 
-          if command -v dos2unix >/dev/null 2>&1; then dos2unix 9304666r_script || true; fi
-          chmod +x 9304666r_script || true
-          if command -v bolt >/dev/null 2>&1; then bolt script run 9304666r_script --targets docker://$PROD_NAME || true; fi
+          # Requirement: write result to /tmp/prod-result-file
+          sudo sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file"
+          cat /tmp/prod-result-file
         '''
       }
     }
@@ -182,6 +196,10 @@ pipeline {
                   sleep 3
                 done
               '
+
+              # Requirement: write result to /tmp/prod-result-file after rollback
+              sudo sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file"
+              cat /tmp/prod-result-file
             '''
             error('Aborting pipeline')
           }
