@@ -42,20 +42,16 @@ pipeline {
                 script {
                     echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
-                    // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Test web server and capture only HTTP status
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
                             wget --server-response --spider --timeout=5 http://localhost:80 2>&1 | grep "HTTP/" | tail -1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
 
-                    // Display result
                     sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
 
-                    // Fail pipeline if test failed
                     def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
@@ -119,22 +115,45 @@ pipeline {
                 script {
                     echo "Op-9304666r-S5: Performing web test on Prod server"
 
-                    // Test Prod web server inside container and capture HTTP status only
                     sh """
                         docker exec ${PROD_CONTAINER} sh -c '
                             curl -Is http://localhost:80 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
                         '
                     """
 
-                    // Display result
                     sh "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file"
 
-                    // Fail pipeline if test failed
                     def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
                     if (prodResult != "HTTP/1.1 200 OK") {
                         error("Prod web test failed! Got result: ${prodResult}")
                     } else {
                         echo "Prod web test passed!"
+                    }
+                }
+            }
+        }
+
+        stage('Op-9304666r-S6') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ProdReleaseOrRollback',
+                        message: 'Prod web test completed. Choose next action:',
+                        parameters: [
+                            choice(name: 'ACTION', choices: ['Proceed to release Prod web server to production', 'Roll back Prod web server'], description: 'Select next step')
+                        ]
+                    )
+
+                    if (userChoice == 'Proceed to release Prod web server to production') {
+                        echo "Op-9304666r-S6: Proceed to release Prod web server to production"
+                    } else {
+                        echo "Rolling back Prod web server using backup image..."
+                        sh """
+                            docker rm -f ${PROD_CONTAINER} || true
+                            docker run -d --name ${PROD_CONTAINER} -p ${PROD_PORT}:80 ${PROD_BACKUP_IMAGE}
+                        """
+                        echo "Op-9304666r-S6: Prod web server is rolled back"
+                        error("Aborting pipeline after rollback.")
                     }
                 }
             }
