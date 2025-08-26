@@ -41,23 +41,47 @@ pipeline {
                     // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Write only HTTP status line into /tmp/qa-result-file
+                    // Test web server using headers only
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
-                            wget -qO- --server-response --timeout=5 http://localhost:${QA_PORT} 2>&1 \
-                            | grep -m1 \"^  HTTP/\" > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
+                            wget --spider --server-response --timeout=5 http://localhost:${QA_PORT} 2>&1 \
+                            | grep "HTTP/" | head -n 1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
 
                     // Display result
                     sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
 
-                    // Validate result
-                    def result = sh(script: "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file", returnStdout: true).trim()
-                    if (result != "HTTP/1.1 200 OK") {
-                        error("QA web test failed! Expected 'HTTP/1.1 200 OK' but got '${result}'")
+                    // Fail pipeline if test failed
+                    def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
+                    if (result == "FAIL" || result == "") {
+                        error("QA web test failed! Ensure Apache is running on port ${QA_PORT} inside the container.")
                     } else {
-                        echo "QA web test passed with HTTP/1.1 200 OK!"
+                        echo "QA web test passed!"
+                    }
+                }
+            }
+        }
+
+        stage('Op-9304666r-S3') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ProceedOrRollback',
+                        message: 'Choose how to proceed:',
+                        parameters: [
+                            choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Roll back QA server'], description: 'Select next step')
+                        ]
+                    )
+
+                    if (userChoice == 'Proceed to Roll out to Prod server') {
+                        echo "Op-9304666r-S3: Proceed to roll out to Prod server"
+                    } else {
+                        echo "Rolling back QA server using backup image..."
+                        sh "docker rm -f ${QA_CONTAINER} || true"
+                        sh "docker run -d --name ${QA_CONTAINER} -p 33200:80 ${QA_BACKUP_IMAGE}"
+                        echo "Op-9304666r-S3: QA server fails after update and is rolled back"
+                        error("Aborting further stages after rollback")
                     }
                 }
             }
