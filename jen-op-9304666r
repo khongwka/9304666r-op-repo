@@ -4,7 +4,8 @@ pipeline {
     environment {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
-        QA_PORT = "80"  // Use container's Apache port
+        CONTAINER_PORT = "80"   // Apache inside container
+        HOST_PORT = "33200"     // Exposed host port
     }
 
     stages {
@@ -41,10 +42,10 @@ pipeline {
                     // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Test web server on container's port 80
+                    // Test web server inside container (container port 80)
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
-                            wget -qO- --timeout=5 http://localhost:${QA_PORT} > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
+                            wget -qO- --timeout=5 http://localhost:${CONTAINER_PORT} > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
 
@@ -54,9 +55,9 @@ pipeline {
                     // Fail pipeline if test failed
                     def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
                     if (result == "FAIL" || result == "") {
-                        error("QA web test failed! Ensure Apache is running on port ${QA_PORT} inside the container.")
+                        error("QA web test failed! Ensure Apache is running on container port ${CONTAINER_PORT}.")
                     } else {
-                        echo "QA web test passed!"
+                        echo "QA web test passed! Accessible on host port ${HOST_PORT}."
                     }
                 }
             }
