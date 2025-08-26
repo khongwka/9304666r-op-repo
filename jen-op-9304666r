@@ -1,21 +1,18 @@
-pipeline {
-    agent any
+stage('Op-9304666r-S1') {
+    steps {
+        script {
+            // 1) Remove old QA backup image and create a new one
+            sh 'docker rmi -f qa-bkup-image || true'
+            sh 'docker commit 9304666r-qa-svr qa-bkup-image'
 
-    stages {
-        stage('Op-9304666r-S1') {
-            steps {
-                // 1) Remove any old QA backup image
-                sh 'docker rmi -f qa-bkup-image || true'
+            // 2) Checkout latest Git repo (Jenkins workspace)
+            checkout scm
 
-                // 2) Create a new QA backup image from running QA web server
-                sh 'docker commit 9304666r-qa-svr qa-bkup-image'
+            // 3) Run the Bolt script using the cloned repo in workspace
+            sh "bolt script run $WORKSPACE/9304666r_script --targets 192.168.100.110 --no-host-key-check"
 
-                // 3) Execute the bolt script to update QA web server
-                sh 'bolt script run /operate/9304666r/9304666r_script --targets 192.168.100.110 --no-host-key-check'
-
-                // 4) Echo confirmation message
-                sh 'echo "Op-S1-9304666r: QA web server is backup and updated"'
-            }
+            // 4) Echo confirmation
+            echo 'Op-S1-9304666r: QA web server is backup and updated'
         }
     }
 }
