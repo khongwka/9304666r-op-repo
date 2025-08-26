@@ -1,29 +1,33 @@
 pipeline {
     agent any
-
+    environment {
+        QA_CONTAINER = "9304666r-qa-svr"
+        BACKUP_IMAGE = "qa-bkup-image"
+        WORKSPACE_DIR = "${env.WORKSPACE}"
+    }
     stages {
         stage('Op-9304666r-S1') {
             steps {
-                sh '''
+                script {
                     echo "Removing old QA backup image..."
-                    docker rmi -f qa-bkup-image || true
+                    sh "docker rmi -f ${BACKUP_IMAGE} || true"
 
-                    echo "Creating new QA backup image from container 9304666r-qa-svr..."
-                    docker commit 9304666r-qa-svr qa-bkup-image
+                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
+                    sh "docker commit ${QA_CONTAINER} ${BACKUP_IMAGE}"
 
-                    echo "Copying script into QA container..."
-                    docker cp 9304666r_script 9304666r-qa-svr:/tmp/9304666r_script
-                    docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script
+                    echo "Copying Puppet script into QA container..."
+                    sh "docker cp ${WORKSPACE_DIR}/9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
+                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
 
                     echo "Copying HTML file into QA container..."
-                    docker exec 9304666r-qa-svr mkdir -p /operate/9304666r/
-                    docker cp index-op-9304666r.html 9304666r-qa-svr:/operate/9304666r/index-op-9304666r.html
+                    sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
+                    sh "docker cp ${WORKSPACE_DIR}/index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
 
                     echo "Running 9304666r_script inside QA container..."
-                    docker exec 9304666r-qa-svr sh /tmp/9304666r_script
+                    sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
 
                     echo "Op-S1-9304666r: QA web server is backup and updated"
-                '''
+                }
             }
         }
     }
