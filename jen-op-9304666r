@@ -1,58 +1,54 @@
 pipeline {
     agent any
+
     environment {
-        QA_CONTAINER = "9304666r-qa-svr"
-        BACKUP_IMAGE = "qa-bkup-image"
-        WORKSPACE_DIR = "${env.WORKSPACE}"
+        WORKSPACE = "${env.WORKSPACE}"
     }
+
     stages {
         stage('Op-9304666r-S1') {
             steps {
                 script {
                     echo "Removing old QA backup image..."
-                    sh "docker rmi -f ${BACKUP_IMAGE} || true"
+                    sh 'docker rmi -f qa-bkup-image || true'
 
-                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
-                    sh "docker commit ${QA_CONTAINER} ${BACKUP_IMAGE}"
+                    echo "Creating new QA backup image from container 9304666r-qa-svr..."
+                    sh 'docker commit 9304666r-qa-svr qa-bkup-image'
 
                     echo "Copying Puppet script into QA container..."
-                    sh "docker cp ${WORKSPACE_DIR}/9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
-                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
+                    sh "docker cp ${WORKSPACE}/9304666r_script 9304666r-qa-svr:/tmp/9304666r_script"
+                    sh 'docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script'
 
                     echo "Copying HTML file into QA container..."
-                    sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
-                    sh "docker cp ${WORKSPACE_DIR}/index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
+                    sh 'docker exec 9304666r-qa-svr mkdir -p /operate/9304666r/'
+                    sh "docker cp ${WORKSPACE}/index-op-9304666r.html 9304666r-qa-svr:/operate/9304666r/index-op-9304666r.html"
 
                     echo "Running 9304666r_script inside QA container..."
-                    sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
+                    sh 'docker exec 9304666r-qa-svr /tmp/9304666r_script'
 
                     echo "Op-S1-9304666r: QA web server is backup and updated"
                 }
             }
         }
-//    }
-//}
 
-stage('Op-9304666r-S2') {
-    steps {
-        script {
-            // Informational message
-            echo "Op-9304666r-S2: Checking on whether QA server is running after update"
+        stage('Op-9304666r-S2') {
+            steps {
+                script {
+                    echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
-            // Run curl test on QA web server via host VM
-            sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file'
+                    // Perform curl test on QA web server via host
+                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file'
 
-            // Display the result
-            sh 'cat /tmp/qa-result-file'
+                    // Show results
+                    sh 'cat /tmp/qa-result-file'
 
-            // Optional: check if HTTP status is 200 OK and fail build otherwise
-            def result = readFile('/tmp/qa-result-file').trim()
-            if (!result.contains('200 OK')) {
-                error("QA web test failed: ${result}")
+                    // Fail pipeline if HTTP status is not 200 OK
+                    def result = readFile('/tmp/qa-result-file').trim()
+                    if (!result.contains('200 OK')) {
+                        error("QA web test failed: ${result}")
+                    }
+                }
             }
         }
     }
 }
-}
-
-
