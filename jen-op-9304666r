@@ -5,9 +5,9 @@ pipeline {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
         QA_PORT = "33200"
+
         PROD_CONTAINER = "9304666r-prod-svr"
         PROD_BACKUP_IMAGE = "prod_bkup_image"
-        REPO_URL = "https://github.com/khongwka/9304666r-op-repo.git"
     }
 
     stages {
@@ -98,10 +98,12 @@ pipeline {
                     echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
 
+                    echo "Copying Puppet script into Prod container..."
+                    sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
+                    sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
+
                     echo "Updating Prod server using Bolt script..."
-                    sh """
-                        bolt script run '/tmp/9304666r_script' --targets ${PROD_CONTAINER}
-                    """
+                    sh "bolt script run '/tmp/9304666r_script' --targets ${PROD_CONTAINER}"
 
                     echo "Op-9304666r-S4: prod web server is backup and updated"
                 }
