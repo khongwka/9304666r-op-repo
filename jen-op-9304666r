@@ -5,9 +5,9 @@ pipeline {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
         QA_PORT = "33200"
-
         PROD_CONTAINER = "9304666r-prod-svr"
         PROD_BACKUP_IMAGE = "prod_bkup_image"
+        PROD_PORT = "33500"
     }
 
     stages {
@@ -98,14 +98,34 @@ pipeline {
                     echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
 
-                    echo "Copying Puppet script into Prod container..."
+                    echo "Ensure Puppet agent installed on Prod container..."
+                    sh "docker exec ${PROD_CONTAINER} bash -c 'apt-get update && apt-get install -y wget curl && wget https://apt.puppet.com/puppet7-release-bionic.deb && dpkg -i puppet7-release-bionic.deb && apt-get update && apt-get install -y puppet-agent'"
+
+                    echo "Updating Prod server using Bolt script..."
                     sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
-
-                    echo "Updating Prod server by running 9304666r_script inside container..."
                     sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
 
                     echo "Op-9304666r-S4: Prod web server is backup and updated"
+                }
+            }
+        }
+
+        stage('Op-9304666r-S5') {
+            steps {
+                script {
+                    echo "Op-9304666r-S5: Testing Prod web server via curl"
+
+                    sh "curl -Is http://localhost:${PROD_PORT} | head -n 1 > /tmp/prod-result-file"
+
+                    sh "cat /tmp/prod-result-file"
+
+                    def prodResult = readFile('/tmp/prod-result-file').trim()
+                    if (prodResult != "HTTP/1.1 200 OK") {
+                        error("Prod web test failed! Got result: ${prodResult}")
+                    } else {
+                        echo "Prod web test passed!"
+                    }
                 }
             }
         }
