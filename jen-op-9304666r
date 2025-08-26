@@ -1,11 +1,13 @@
 pipeline {
     agent any
 
-    environment {
-        WORKSPACE = "${env.WORKSPACE}"
-    }
-
     stages {
+        stage('Declarative: Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Op-9304666r-S1') {
             steps {
                 script {
@@ -16,12 +18,12 @@ pipeline {
                     sh 'docker commit 9304666r-qa-svr qa-bkup-image'
 
                     echo "Copying Puppet script into QA container..."
-                    sh "docker cp ${WORKSPACE}/9304666r_script 9304666r-qa-svr:/tmp/9304666r_script"
+                    sh 'docker cp 9304666r_script 9304666r-qa-svr:/tmp/9304666r_script'
                     sh 'docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script'
 
                     echo "Copying HTML file into QA container..."
                     sh 'docker exec 9304666r-qa-svr mkdir -p /operate/9304666r/'
-                    sh "docker cp ${WORKSPACE}/index-op-9304666r.html 9304666r-qa-svr:/operate/9304666r/index-op-9304666r.html"
+                    sh 'docker cp index-op-9304666r.html 9304666r-qa-svr:/operate/9304666r/index-op-9304666r.html'
 
                     echo "Running 9304666r_script inside QA container..."
                     sh 'docker exec 9304666r-qa-svr /tmp/9304666r_script'
@@ -36,14 +38,14 @@ pipeline {
                 script {
                     echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
-                    // Perform curl test on QA web server via host
-                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file'
+                    // Run curl inside the container and store result in container /tmp
+                    sh 'docker exec 9304666r-qa-svr sh -c "curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file"'
 
-                    // Show results
-                    sh 'cat /tmp/qa-result-file'
+                    // Show result
+                    sh 'docker exec 9304666r-qa-svr cat /tmp/qa-result-file'
 
-                    // Fail pipeline if HTTP status is not 200 OK
-                    def result = readFile('/tmp/qa-result-file').trim()
+                    // Fail pipeline if web test did not return HTTP 200
+                    def result = sh(script: 'docker exec 9304666r-qa-svr cat /tmp/qa-result-file', returnStdout: true).trim()
                     if (!result.contains('200 OK')) {
                         error("QA web test failed: ${result}")
                     }
