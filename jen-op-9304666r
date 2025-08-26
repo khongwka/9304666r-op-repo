@@ -4,7 +4,7 @@ pipeline {
     environment {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
-        QA_PORT = "33200"
+        QA_PORT = "80"  // Use container's Apache port
     }
 
     stages {
@@ -41,7 +41,7 @@ pipeline {
                     // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Test web server
+                    // Test web server on container's port 80
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
                             wget -qO- --timeout=5 http://localhost:${QA_PORT} > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
