@@ -102,10 +102,10 @@ pipeline {
                     sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
 
-                    echo "Updating Prod server using Bolt script..."
-                    sh "bolt script run '/tmp/9304666r_script' --targets ${PROD_CONTAINER}"
+                    echo "Updating Prod server by running 9304666r_script inside container..."
+                    sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
 
-                    echo "Op-9304666r-S4: prod web server is backup and updated"
+                    echo "Op-9304666r-S4: Prod web server is backup and updated"
                 }
             }
         }
