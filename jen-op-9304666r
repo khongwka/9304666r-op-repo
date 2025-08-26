@@ -5,6 +5,9 @@ pipeline {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
         QA_PORT = "33200"
+        PROD_CONTAINER = "9304666r-prod-svr"
+        PROD_BACKUP_IMAGE = "prod_bkup_image"
+        REPO_URL = "https://github.com/khongwka/9304666r-op-repo.git"
     }
 
     stages {
@@ -15,7 +18,6 @@ pipeline {
                     sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
 
                     echo "Creating new QA backup image from container ${QA_CONTAINER}..."
-                    // Commit with Apache start CMD baked in
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
 
                     echo "Copying Puppet script into QA container..."
@@ -39,20 +41,16 @@ pipeline {
                 script {
                     echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
-                    // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Test web server, only save HTTP status
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
                             wget --server-response --spider --timeout=5 http://localhost:80 2>&1 | grep "HTTP/" | tail -1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
 
-                    // Display result
                     sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
 
-                    // Fail pipeline if test failed
                     def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
@@ -87,6 +85,25 @@ pipeline {
                         echo "Op-9304666r-S3: QA server fails after update and is rolled back"
                         error("Aborting pipeline after rollback.")
                     }
+                }
+            }
+        }
+
+        stage('Op-9304666r-S4') {
+            steps {
+                script {
+                    echo "Removing old Prod backup image..."
+                    sh "docker rmi -f ${PROD_BACKUP_IMAGE} || true"
+
+                    echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
+                    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
+
+                    echo "Updating Prod server using Bolt script..."
+                    sh """
+                        bolt script run '/tmp/9304666r_script' --targets ${PROD_CONTAINER}
+                    """
+
+                    echo "Op-9304666r-S4: prod web server is backup and updated"
                 }
             }
         }
