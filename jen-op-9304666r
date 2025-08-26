@@ -42,12 +42,18 @@ pipeline {
                 script {
                     echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
+                    // Ensure wget is installed
+                    sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
+
                     // Test web server and capture only HTTP status
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
                             wget --server-response --spider --timeout=5 http://localhost:80 2>&1 | grep "HTTP/" | tail -1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
+
+                    // Display result
+                    sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
 
                     // Fail pipeline if test failed
                     def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
@@ -95,12 +101,15 @@ pipeline {
                     echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
 
-                    echo "Updating Prod server using deployment script..."
+                    echo "Installing Puppet agent in Prod container if needed..."
+                    sh "docker exec ${PROD_CONTAINER} bash -c 'which puppet || apt-get update && apt-get install -y wget curl && wget https://apt.puppet.com/puppet7-release-bionic.deb && dpkg -i puppet7-release-bionic.deb && apt-get update && apt-get install -y puppet-agent'"
+
+                    echo "Updating Prod server using Bolt script..."
                     sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
 
-                    echo "Op-9304666r-S4: Prod web server is backup and updated"
+                    echo "Op-9304666r-S4: prod web server is backup and updated"
                 }
             }
         }
@@ -116,6 +125,9 @@ pipeline {
                             curl -Is http://localhost:80 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
                         '
                     """
+
+                    // Display result
+                    sh "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file"
 
                     // Fail pipeline if test failed
                     def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
