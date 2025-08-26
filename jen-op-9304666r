@@ -4,8 +4,7 @@ pipeline {
     environment {
         QA_CONTAINER = "9304666r-qa-svr"
         QA_BACKUP_IMAGE = "qa-bkup-image"
-        CONTAINER_PORT = "80"   // Apache inside container
-        HOST_PORT = "33200"     // Exposed host port
+        QA_PORT = "80"
     }
 
     stages {
@@ -42,22 +41,23 @@ pipeline {
                     // Ensure wget is installed
                     sh "docker exec ${QA_CONTAINER} sh -c 'which wget || apt-get update && apt-get install -y wget'"
 
-                    // Test web server inside container (container port 80)
+                    // Write only HTTP status line into /tmp/qa-result-file
                     sh """
                         docker exec ${QA_CONTAINER} sh -c '
-                            wget -qO- --timeout=5 http://localhost:${CONTAINER_PORT} > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
+                            wget -qO- --server-response --timeout=5 http://localhost:${QA_PORT} 2>&1 \
+                            | grep -m1 \"^  HTTP/\" > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
                         '
                     """
 
                     // Display result
                     sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
 
-                    // Fail pipeline if test failed
-                    def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
-                    if (result == "FAIL" || result == "") {
-                        error("QA web test failed! Ensure Apache is running on container port ${CONTAINER_PORT}.")
+                    // Validate result
+                    def result = sh(script: "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file", returnStdout: true).trim()
+                    if (result != "HTTP/1.1 200 OK") {
+                        error("QA web test failed! Expected 'HTTP/1.1 200 OK' but got '${result}'")
                     } else {
-                        echo "QA web test passed! Accessible on host port ${HOST_PORT}."
+                        echo "QA web test passed with HTTP/1.1 200 OK!"
                     }
                 }
             }
