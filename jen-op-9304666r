@@ -1,32 +1,32 @@
 pipeline {
     agent any
 
-    environment {
-        WORKSPACE_DIR = "${env.WORKSPACE}"
-    }
-
     stages {
+        stage('Checkout SCM') {
+            steps {
+                checkout scm
+            }
+        }
+
         stage('Op-9304666r-S1') {
             steps {
                 script {
-                    // 1) Remove any old QA backup image and create new backup
                     sh '''
                         echo "Removing old QA backup image..."
                         docker rmi -f qa-bkup-image || true
+
                         echo "Creating new QA backup image from container 9304666r-qa-svr..."
                         docker commit 9304666r-qa-svr qa-bkup-image
-                    '''
 
-                    // 2) Update QA server using Bolt with Docker transport
-                    sh """
+                        echo "Copying script into QA container..."
+                        docker cp 9304666r_script 9304666r-qa-svr:/tmp/9304666r_script
+                        docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script
+
                         echo "Running 9304666r_script inside QA container..."
-                        bolt script run ${WORKSPACE_DIR}/9304666r_script \
-                        --targets 9304666r-qa-svr \
-                        --transport docker
-                    """
+                        docker exec 9304666r-qa-svr sh /tmp/9304666r_script
 
-                    // 3) Echo confirmation
-                    echo "Op-S1-9304666r: QA web server is backup and updated"
+                        echo "Op-S1-9304666r: QA web server is backup and updated"
+                    '''
                 }
             }
         }
