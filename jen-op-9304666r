@@ -2,32 +2,28 @@ pipeline {
     agent any
 
     stages {
-        stage('Checkout SCM') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Op-9304666r-S1') {
             steps {
-                script {
-                    sh '''
-                        echo "Removing old QA backup image..."
-                        docker rmi -f qa-bkup-image || true
+                sh '''
+                    echo "Removing old QA backup image..."
+                    docker rmi -f qa-bkup-image || true
 
-                        echo "Creating new QA backup image from container 9304666r-qa-svr..."
-                        docker commit 9304666r-qa-svr qa-bkup-image
+                    echo "Creating new QA backup image from container 9304666r-qa-svr..."
+                    docker commit 9304666r-qa-svr qa-bkup-image
 
-                        echo "Copying script into QA container..."
-                        docker cp 9304666r_script 9304666r-qa-svr:/tmp/9304666r_script
-                        docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script
+                    echo "Copying script into QA container..."
+                    docker cp 9304666r_script 9304666r-qa-svr:/tmp/9304666r_script
+                    docker exec 9304666r-qa-svr chmod +x /tmp/9304666r_script
 
-                        echo "Running 9304666r_script inside QA container..."
-                        docker exec 9304666r-qa-svr sh /tmp/9304666r_script
+                    echo "Copying HTML file into QA container..."
+                    docker exec 9304666r-qa-svr mkdir -p /operate/9304666r/
+                    docker cp index-op-9304666r.html 9304666r-qa-svr:/operate/9304666r/index-op-9304666r.html
 
-                        echo "Op-S1-9304666r: QA web server is backup and updated"
-                    '''
-                }
+                    echo "Running 9304666r_script inside QA container..."
+                    docker exec 9304666r-qa-svr sh /tmp/9304666r_script
+
+                    echo "Op-S1-9304666r: QA web server is backup and updated"
+                '''
             }
         }
     }
