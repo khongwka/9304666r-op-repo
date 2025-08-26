@@ -1,13 +1,40 @@
-# 1) Ensure apache2 is installed and running
-/opt/puppetlabs/bin/puppet resource package apache2 ensure=installed
-/opt/puppetlabs/bin/puppet resource service apache2 ensure=running enable=true
+# 1) Ensure Apache2 is installed and running
+package { 'apache2':
+  ensure   => '2.4.29-1ubuntu4.27',
+  provider => 'apt',
+}
 
-# 2) Remove and recreate directory /operate/9304666r
-rm -rf /operate/9304666r
-mkdir -p /operate/9304666r
+service { 'apache2':
+  ensure   => 'running',
+  enable   => true,
+  provider => 'debian',
+}
 
-# 3) Clone the GitHub repo into /operate/9304666r
-git clone https://github.com/khongwka/9304666r-op-repo.git /operate/9304666r
+# 2) Ensure Git is installed
+package { 'git':
+  ensure => installed,
+}
 
-# 4) Copy new index.html into Apache’s web root
-cp /operate/9304666r/index-op-9304666r.html /var/www/html/index.html
+# 3) Log update info
+notify { 'Update Puppet script (9304666r_script)':
+}
+
+# 4) Remove and recreate /operate/9304666r
+exec { 'clean_operate_dir':
+  command => '/bin/rm -rf /operate/9304666r && /bin/mkdir -p /operate/9304666r',
+  path    => ['/bin','/usr/bin'],
+}
+
+# 5) Clone GitHub repository into /operate/9304666r
+exec { 'clone_repo':
+  command => '/usr/bin/git clone https://github.com/khongwka/9304666r-op-repo.git /operate/9304666r',
+  path    => ['/bin','/usr/bin'],
+  require => Exec['clean_operate_dir'],
+}
+
+# 6) Copy new index.html into Apache web root
+exec { 'copy_index_html':
+  command => '/bin/cp /operate/9304666r/index-op-9304666r.html /var/www/html/index.html',
+  path    => ['/bin','/usr/bin'],
+  require => Exec['clone_repo'],
+}
