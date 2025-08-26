@@ -33,4 +33,17 @@ pipeline {
     }
 }
 
+stage('Op-9304666r-S2') {
+    agent any
+    steps {
+        echo 'Op-9304666r-S2: Checking on whether QA server is running after update'
+        echo 'Running Web test on QA web server...'
+        // Execute curl test and save result to a file
+        sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file'
+        
+        // Display the result
+        sh 'cat /tmp/qa-result-file'
+    }
+}
+
 
