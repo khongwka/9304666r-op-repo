@@ -32,9 +32,9 @@ pipeline {
 
                         echo "Running 9304666r_script inside QA container..."
                         docker exec ${QA_CONTAINER} /tmp/9304666r_script
-
+                        '''
                         echo "Op-S1-9304666r: QA web server is backup and updated"
-                    '''
+                    
                 }
             }
         }
@@ -163,6 +163,7 @@ pipeline {
         }
     }
 }
+
 
 
 
