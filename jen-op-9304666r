@@ -15,21 +15,21 @@ pipeline {
         stage('Op-9304666r-S1') {
             steps {
                 script {
-                    //echo "Removing old QA backup image..."
+                    echo "Removing old QA backup image..."
                     sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
 
-                    //echo "Creating new QA backup image from container ${QA_CONTAINER}..."
+                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
 
-                    //echo "Copying Puppet script into QA container..."
+                    echo "Copying Puppet script into QA container..."
                     sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
 
-                    //echo "Copying HTML file into QA container..."
+                    echo "Copying HTML file into QA container..."
                     sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
                     sh "docker cp index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
 
-                    //echo "Running 9304666r_script inside QA container..."
+                    echo "Running 9304666r_script inside QA container..."
                     sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
 
                     echo "Op-S1-9304666r: QA web server is backup and updated"
@@ -38,28 +38,26 @@ pipeline {
         }
 
         stage('Op-9304666r-S2') {
-            steps {
-                script {
-                    //echo "Op-9304666r-S2: Checking on whether QA server is running after update"
+    steps {
+        script {
+            echo "Op-9304666r-S2: Performing web test on QA server"
 
-                    // Run curl test from host VM against QA server (port 33200)
-                    sh '''
-                        curl -Is http://localhost:33200 | head -n 1 > ${WORKSPACE}/qa-result-file || echo "FAIL" > ${WORKSPACE}/qa-result-file
-                    '''
+            // Curl against host port 33200, write result into qa-result-file
+            sh """
+                curl -Is http://localhost:33200 | head -n 1 > qa-result-file || echo "FAIL" > qa-result-file
+            """
 
-                    // Print and check result
-                    sh "cat ${WORKSPACE}/qa-result-file"
-                    def qaResult = sh(script: "head -n 1 ${WORKSPACE}/qa-result-file", returnStdout: true).trim()
+            // Read the result
+            def qaResult = readFile('qa-result-file').trim()
 
-                    if (qaResult.contains("200 OK")) {
-                        echo "QA web test passed!"
-                    } else {
-                        echo "QA web test failed!"
-                        error("Aborting pipeline due to QA failure")
-                    }
-                }
+            if (qaResult == "HTTP/1.1 200 OK") {
+                echo "QA web test passed!"
+            } else {
+                error("QA web test failed! Got result: ${qaResult}")
             }
         }
+    }
+}
 
         stage('Op-9304666r-S3') {
             steps {
@@ -75,7 +73,7 @@ pipeline {
                     if (userChoice == 'Proceed to Roll out to Prod server') {
                         echo "Op-9304666r-S3: Proceed to roll out to Prod server"
                     } else {
-                        //echo "Rolling back QA server using backup image..."
+                        echo "Rolling back QA server using backup image..."
                         sh """
                             docker rm -f ${QA_CONTAINER} || true
                             docker run -d --name ${QA_CONTAINER} -p ${QA_PORT}:80 ${QA_BACKUP_IMAGE}
@@ -90,13 +88,13 @@ pipeline {
         stage('Op-9304666r-S4') {
             steps {
                 script {
-                    //echo "Removing old Prod backup image..."
+                    echo "Removing old Prod backup image..."
                     sh "docker rmi -f ${PROD_BACKUP_IMAGE} || true"
 
-                    //echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
+                    echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
 
-                    //echo "Updating Prod server using deployment script..."
+                    echo "Updating Prod server using deployment script..."
                     sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
@@ -106,10 +104,10 @@ pipeline {
             }
         }
 
-stage('Op-9304666r-S5') {
+        stage('Op-9304666r-S5') {
     steps {
         script {
-            echo "Op-9304666r-S5: Checking on whether Prod server is running after update"
+            echo "Op-9304666r-S5: Performing web test on Prod server"
 
             // Curl against host port 33500, write result into prod-result-file
             sh """
@@ -163,16 +161,3 @@ stage('Op-9304666r-S5') {
         }
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
