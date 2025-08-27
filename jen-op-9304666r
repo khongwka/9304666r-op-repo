@@ -42,20 +42,20 @@ pipeline {
                 script {
                     echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
-                    // Run curl test from host VM against QA server (port 33200 is mapped in docker run)
-            sh '''
-                curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
-            '''
+                    // Run curl test from host VM against QA server (port 33200)
+                    sh '''
+                        curl -Is http://localhost:33200 | head -n 1 > ${WORKSPACE}/qa-result-file || echo "FAIL" > ${WORKSPACE}/qa-result-file
+                    '''
 
-            // Print and check result
-            sh 'cat /tmp/qa-result-file'
-            def qaResult = sh(script: "head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
+                    // Print and check result
+                    sh "cat ${WORKSPACE}/qa-result-file"
+                    def qaResult = sh(script: "head -n 1 ${WORKSPACE}/qa-result-file", returnStdout: true).trim()
 
-            if (qaResult.contains("200 OK")) {
-                echo "QA web test passed!"
-            } else {
-                echo "QA web test failed!"
-                error("Aborting pipeline due to QA failure")
+                    if (qaResult.contains("200 OK")) {
+                        echo "QA web test passed!"
+                    } else {
+                        echo "QA web test failed!"
+                        error("Aborting pipeline due to QA failure")
                     }
                 }
             }
@@ -164,3 +164,4 @@ pipeline {
         }
     }
 }
+
