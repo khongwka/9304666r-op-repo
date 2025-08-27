@@ -119,16 +119,24 @@ stage('Op-9304666r-S5') {
                 // docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 | tee /tmp/prod-result-file >/dev/null || echo 'FAIL' | tee /tmp/prod-result-file"
                 // docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo FAIL > /tmp/prod-result-file"
                 // docker cp 9304666r-prod-svr:/tmp/prod-result-file ${WORKSPACE}/prod-result-file
-                docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /operate/9304666r/tmp/prod-result-file || echo FAIL > /operate/9304666r/tmp/prod-result-file"
-                docker cp 9304666r-prod-svr:/operate/9304666r/tmp/prod-result-file ${WORKSPACE}/prod-result-file
+                // docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /operate/9304666r/tmp/prod-result-file || echo FAIL > /operate/9304666r/tmp/prod-result-file"
+                // docker cp 9304666r-prod-svr:/operate/9304666r/tmp/prod-result-file ${WORKSPACE}/prod-result-file
+                docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo FAIL > /tmp/prod-result-file"
+                docker cp 9304666r-prod-svr:/tmp/prod-result-file ${WORKSPACE}/prod-result-file
             """
 
             // Read the result
-            def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
-            if (prodResult != "HTTP/1.1 200 OK") {
-                error("Prod web test failed! Got result: ${prodResult}")
-            } else {
+            // def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+            // if (prodResult != "HTTP/1.1 200 OK") {
+            //    error("Prod web test failed! Got result: ${prodResult}")
+            //} else {
+            //    echo "Prod web test passed!"
+            def prodResult = readFile("${WORKSPACE}/prod-result-file").trim()
+            if (prodResult.contains("200")) {
                 echo "Prod web test passed!"
+            } else {
+                error("Prod web test failed! Got: ${prodResult}")
+
             }
         }
     }
@@ -169,6 +177,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
