@@ -117,7 +117,8 @@ stage('Op-9304666r-S5') {
             // Run curl test FROM HOST to host port 33500
             sh """
                 // curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
-                curl -Is http://localhost:33500 | head -n 1 | sudo tee /tmp/prod-result-file > /dev/null || echo "FAIL" | sudo tee /tmp/prod-result-file > /dev/null
+                // curl -Is http://localhost:33500 | head -n 1 | sudo tee /tmp/prod-result-file > /dev/null || echo "FAIL" | sudo tee /tmp/prod-result-file > /dev/null
+                docker exec -u root 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
             """
 
             // Read the result
@@ -166,6 +167,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
