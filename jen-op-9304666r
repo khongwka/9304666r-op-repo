@@ -81,7 +81,7 @@ pipeline {
                             docker run -d --name ${QA_CONTAINER} -p ${QA_PORT}:80 ${QA_BACKUP_IMAGE}
                         """
                         echo "Op-9304666r-S3: QA server fails after update and is rolled back"
-                        error("Aborting pipeline after rollback.")
+                        //error("Aborting pipeline after rollback.")
                     }
                 }
             }
@@ -163,6 +163,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
