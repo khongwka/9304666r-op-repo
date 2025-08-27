@@ -105,26 +105,28 @@ stage('Op-9304666r-S2') {
         }
 
 stage('Op-9304666r-S5') {
-    steps {
-        script {
-            echo "Op-9304666r-S5: Performing web test on Prod server"
+            steps {
+                script {
+                    echo "Op-9304666r-S5: Performing web test on Prod server"
 
-            // Curl against host port 33500, write result into prod-result-file
-            sh """
-                curl -Is http://localhost:33500 | head -n 1 > prod-result-file || echo "FAIL" > prod-result-file
-            """
+                    // Test Prod web server inside container and capture HTTP status only
+                    sh """
+                        docker exec ${PROD_CONTAINER} sh -c '
+                            curl -Is http://localhost:33500 | head -n 1 > prod-result-file || echo "FAIL" > prod-result-file
+                        '
+                    """
 
-            // Read the result
-            def prodResult = readFile('prod-result-file').trim()
-
-            if (prodResult == "HTTP/1.1 200 OK") {
-                echo "Prod web test passed!"
-            } else {
-                error("Prod web test failed! Got result: ${prodResult}")
+                    // Fail pipeline if test failed
+                    def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 prod-result-file", returnStdout: true).trim()
+                    if (prodResult != "HTTP/1.1 200 OK") {
+                        error("Prod web test failed! Got result: ${prodResult}")
+                    } else {
+                        echo "Prod web test passed!"
+                    }
+                }
             }
         }
-    }
-}
+
 
         stage('Op-9304666r-S6') {
             steps {
@@ -161,4 +163,5 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
