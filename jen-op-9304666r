@@ -40,7 +40,7 @@ pipeline {
         stage('Op-9304666r-S2') {
             steps {
                 script {
-                    echo "Op-9304666r-S2: Checking on whether QA server is running after update"
+                    //echo "Op-9304666r-S2: Checking on whether QA server is running after update"
 
                     // Run curl test from host VM against QA server (port 33200)
                     sh '''
@@ -75,13 +75,13 @@ pipeline {
                     if (userChoice == 'Proceed to Roll out to Prod server') {
                         echo "Op-9304666r-S3: Proceed to roll out to Prod server"
                     } else {
-                        echo "Rolling back QA server using backup image..."
+                        //echo "Rolling back QA server using backup image..."
                         sh """
                             docker rm -f ${QA_CONTAINER} || true
                             docker run -d --name ${QA_CONTAINER} -p ${QA_PORT}:80 ${QA_BACKUP_IMAGE}
                         """
                         echo "Op-9304666r-S3: QA server fails after update and is rolled back"
-                        //error("Aborting pipeline after rollback.")
+                        error("Aborting pipeline after rollback.")
                     }
                 }
             }
@@ -109,7 +109,7 @@ pipeline {
 stage('Op-9304666r-S5') {
     steps {
         script {
-            echo "Op-9304666r-S5: Performing web test on Prod server"
+            echo "Op-9304666r-S5: Checking on whether Prod server is running after update"
 
             // Curl against host port 33500, write result into prod-result-file
             sh """
@@ -163,6 +163,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
