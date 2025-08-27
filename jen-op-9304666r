@@ -15,21 +15,21 @@ pipeline {
         stage('Op-9304666r-S1') {
             steps {
                 script {
-                    echo "Removing old QA backup image..."
+                    //echo "Removing old QA backup image..."
                     sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
 
-                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
+                    //echo "Creating new QA backup image from container ${QA_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
 
-                    echo "Copying Puppet script into QA container..."
+                    //echo "Copying Puppet script into QA container..."
                     sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
 
-                    echo "Copying HTML file into QA container..."
+                    //echo "Copying HTML file into QA container..."
                     sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
                     sh "docker cp index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
 
-                    echo "Running 9304666r_script inside QA container..."
+                    //echo "Running 9304666r_script inside QA container..."
                     sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
 
                     echo "Op-S1-9304666r: QA web server is backup and updated"
@@ -90,13 +90,13 @@ pipeline {
         stage('Op-9304666r-S4') {
             steps {
                 script {
-                    echo "Removing old Prod backup image..."
+                    //echo "Removing old Prod backup image..."
                     sh "docker rmi -f ${PROD_BACKUP_IMAGE} || true"
 
-                    echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
+                    //echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
 
-                    echo "Updating Prod server using deployment script..."
+                    //echo "Updating Prod server using deployment script..."
                     sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
                     sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
@@ -163,6 +163,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
