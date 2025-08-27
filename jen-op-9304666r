@@ -117,8 +117,10 @@ stage('Op-9304666r-S5') {
                 // curl -Is http://localhost:33500 | head -n 1 | sudo tee /tmp/prod-result-file > /dev/null || echo "FAIL" | sudo tee /tmp/prod-result-file > /dev/null
                 // docker exec -u root 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
                 // docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 | tee /tmp/prod-result-file >/dev/null || echo 'FAIL' | tee /tmp/prod-result-file"
-                docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo FAIL > /tmp/prod-result-file"
-                docker cp 9304666r-prod-svr:/tmp/prod-result-file ${WORKSPACE}/prod-result-file
+                // docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo FAIL > /tmp/prod-result-file"
+                // docker cp 9304666r-prod-svr:/tmp/prod-result-file ${WORKSPACE}/prod-result-file
+                docker exec 9304666r-prod-svr sh -c "curl -Is http://localhost:33500 | head -n 1 > /operate/9304666r/tmp/prod-result-file || echo FAIL > /operate/9304666r/tmp/prod-result-file"
+                docker cp 9304666r-prod-svr:/operate/9304666r/tmp/prod-result-file ${WORKSPACE}/prod-result-file
             """
 
             // Read the result
@@ -167,6 +169,7 @@ stage('Op-9304666r-S5') {
         }
     }
 }
+
 
 
 
