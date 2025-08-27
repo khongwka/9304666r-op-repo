@@ -37,28 +37,27 @@ pipeline {
             }
         }
 
-        stage('Op-9304666r-S2') {
-            steps {
-                script {
-                    echo "Op-9304666r-S2: Checking on whether QA server is running after update"
+stage('Op-9304666r-S2') {
+    steps {
+        script {
+            echo "Op-9304666r-S2: Performing web test on QA server"
 
-                    // Test web server and capture only HTTP status
-                    sh """
-                        docker exec ${QA_CONTAINER} sh -c '
-                            wget --server-response --spider --timeout=5 http://localhost:80 2>&1 | grep "HTTP/" | tail -1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
-                        '
-                    """
+            // Curl against host port 33200, write result into qa-result-file
+            sh """
+                curl -Is http://localhost:33200 | head -n 1 > qa-result-file || echo "FAIL" > qa-result-file
+            """
 
-                    // Fail pipeline if test failed
-                    def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
-                    if (result != "HTTP/1.1 200 OK") {
-                        error("QA web test failed! Got result: ${result}")
-                    } else {
-                        echo "QA web test passed!"
-                    }
-                }
+            // Read the result
+            def qaResult = readFile('qa-result-file').trim()
+
+            if (qaResult == "HTTP/1.1 200 OK") {
+                echo "QA web test passed!"
+            } else {
+                error("QA web test failed! Got result: ${qaResult}")
             }
         }
+    }
+}
 
         stage('Op-9304666r-S3') {
             steps {
@@ -105,28 +104,27 @@ pipeline {
             }
         }
 
-        stage('Op-9304666r-S5') {
-            steps {
-                script {
-                    echo "Op-9304666r-S5: Performing web test on Prod server"
+stage('Op-9304666r-S5') {
+    steps {
+        script {
+            echo "Op-9304666r-S5: Performing web test on Prod server"
 
-                    // Test Prod web server inside container and capture HTTP status only
-                    sh """
-                        docker exec ${PROD_CONTAINER} sh -c '
-                            curl -Is http://localhost:80 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
-                        '
-                    """
+            // Curl against host port 33500, write result into prod-result-file
+            sh """
+                curl -Is http://localhost:33500 | head -n 1 > prod-result-file || echo "FAIL" > prod-result-file
+            """
 
-                    // Fail pipeline if test failed
-                    def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
-                    if (prodResult != "HTTP/1.1 200 OK") {
-                        error("Prod web test failed! Got result: ${prodResult}")
-                    } else {
-                        echo "Prod web test passed!"
-                    }
-                }
+            // Read the result
+            def prodResult = readFile('prod-result-file').trim()
+
+            if (prodResult == "HTTP/1.1 200 OK") {
+                echo "Prod web test passed!"
+            } else {
+                error("Prod web test failed! Got result: ${prodResult}")
             }
         }
+    }
+}
 
         stage('Op-9304666r-S6') {
             steps {
@@ -163,3 +161,4 @@ pipeline {
         }
     }
 }
+
