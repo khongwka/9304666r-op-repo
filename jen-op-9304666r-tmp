@@ -56,8 +56,8 @@ stage('Op-9304666r-S1') {
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
                     } else {
-                        echo "QA web test passed!"
-                        echo "Fetching deployed version from QA container..."
+                        //echo "QA web test passed!"
+                        //echo "Fetching deployed version from QA container..."
                         deployedVersion = sh(
                             script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
                             returnStdout: true
