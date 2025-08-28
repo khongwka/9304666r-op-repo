@@ -109,31 +109,29 @@ stage('Op-9304666r-S2') {
             }
         }
 
-        stage('Op-9304666r-S5') {
-            steps {
-                script {
-                    echo "Op-9304666r-S5: Performing web test on Prod server"
+stage('Op-9304666r-S5') {
+    steps {
+        script {
+            echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
 
-                    // Test Prod web server inside container and capture HTTP status only
-                    sh """
-                        docker exec ${PROD_CONTAINER} sh -c '
-                            curl -Is http://localhost:80 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
-                        '
-                    """
+            // Run curl test against localhost:33500 and write result to /tmp/prod-result-file
+            sh """
+                curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
+            """
 
-                    // Display result
-                    sh "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file"
+            // Display result file content
+            sh "cat /tmp/prod-result-file"
 
-                    // Fail pipeline if test failed
-                    def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
-                    if (prodResult != "HTTP/1.1 200 OK") {
-                        error("Prod web test failed! Got result: ${prodResult}")
-                    } else {
-                        echo "Prod web test passed!"
-                    }
-                }
+            // Fail pipeline if result is not HTTP/1.1 200 OK
+            def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+            if (prodResult != "HTTP/1.1 200 OK") {
+                error("Prod web test failed! Got result: ${prodResult}")
+            } else {
+                echo "Prod web test passed!"
             }
         }
+    }
+}
 
         stage('Op-9304666r-S6') {
             steps {
@@ -170,4 +168,5 @@ stage('Op-9304666r-S2') {
         }
     }
 }
+
 
