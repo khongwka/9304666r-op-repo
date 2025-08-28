@@ -6,10 +6,12 @@ pipeline {
             steps {
                 script {
                     // Step 1: Write the result file to the safe workspace directory.
-                    sh "curl -Is http://localhost:33200 | head -n 1 > ${WORKSPACE}/qa-result-file || true"
+                    //sh "curl -Is http://localhost:33200 | head -n 1 > ${WORKSPACE}/qa-result-file || true"
+                    sh 'curl -Is http://localhost:33200 | head -n 1 > /jenkins-test/qa-result-file || true'
 
                     // Step 2: Read the result file from the workspace.
-                    def result = readFile("${WORKSPACE}/qa-result-file").trim()
+                    //def result = readFile("${WORKSPACE}/qa-result-file").trim()
+                    def result = readFile('/jenkins-test/qa-result-file').trim()
 
                     // Step 3: Check the result.
                     if (result.contains('200 OK')) {
@@ -22,3 +24,4 @@ pipeline {
         }
     }
 }
+
