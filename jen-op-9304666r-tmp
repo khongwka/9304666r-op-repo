@@ -1,22 +1,171 @@
 pipeline {
     agent any
 
+    environment {
+        QA_CONTAINER = "9304666r-qa-svr"
+        QA_BACKUP_IMAGE = "qa-bkup-image"
+        QA_PORT = "33200"
+
+        PROD_CONTAINER = "9304666r-prod-svr"
+        PROD_BACKUP_IMAGE = "prod_bkup_image"
+        PROD_PORT = "33500"
+    }
+
     stages {
-        stage('Run and Verify Web Test') {
+        stage('Op-9304666r-S1') {
             steps {
                 script {
-                    // This command attempts to write to the restricted /tmp directory.
-                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
+                    echo "Removing old QA backup image..."
+                    sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
 
-                    def result = readFile('/tmp/qa-result-file').trim()
+                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
+                    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
 
-                    if (result.contains('200 OK')) {
-                        echo "Web test successful: ${result}"
+                    echo "Copying Puppet script into QA container..."
+                    sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
+                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
+
+                    echo "Copying HTML file into QA container..."
+                    sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
+                    sh "docker cp index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
+
+                    echo "Running 9304666r_script inside QA container..."
+                    sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
+
+                    echo "Op-S1-9304666r: QA web server is backup and updated"
+                }
+            }
+        }
+
+stage('Op-9304666r-S2') {
+    steps {
+        script {
+            echo "Op-9304666r-S2: Checking if QA server is running (via curl on port 33200)"
+
+            // Run curl test against localhost:33200 and write result to /tmp/qa-result-file
+            sh """
+                curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
+            """
+
+            // Display result file content
+            sh "cat /tmp/qa-result-file"
+
+            // Fail pipeline if result is not HTTP/1.1 200 OK
+            def result = sh(script: "head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
+            if (result != "HTTP/1.1 200 OK") {
+                error("QA web test failed! Got result: ${result}")
+            } else {
+                echo "QA web test passed!"
+            }
+        }
+    }
+}
+
+        stage('Op-9304666r-S3') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ProceedOrRollback',
+                        message: 'QA test completed. Choose next action:',
+                        parameters: [
+                            choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Roll back QA server'], description: 'Select next step')
+                        ]
+                    )
+
+                    if (userChoice == 'Proceed to Roll out to Prod server') {
+                        echo "Op-9304666r-S3: Proceed to roll out to Prod server"
                     } else {
-                        error("Web test FAILED. Server response was: '${result}'")
+                        echo "Rolling back QA server using backup image..."
+                        sh """
+                            docker rm -f ${QA_CONTAINER} || true
+                            docker run -d --name ${QA_CONTAINER} -p ${QA_PORT}:80 ${QA_BACKUP_IMAGE}
+                        """
+                        echo "Op-9304666r-S3: QA server fails after update and is rolled back"
+                        error("Aborting pipeline after rollback.")
                     }
+                }
+            }
+        }
+
+        stage('Op-9304666r-S4') {
+            steps {
+                script {
+                    echo "Removing old Prod backup image..."
+                    sh "docker rmi -f ${PROD_BACKUP_IMAGE} || true"
+
+                    echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
+                    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
+
+                    echo "Installing Puppet agent in Prod container if needed..."
+                    sh "docker exec ${PROD_CONTAINER} bash -c 'which puppet || apt-get update && apt-get install -y wget curl && wget https://apt.puppet.com/puppet7-release-bionic.deb && dpkg -i puppet7-release-bionic.deb && apt-get update && apt-get install -y puppet-agent'"
+
+                    echo "Updating Prod server using Bolt script..."
+                    sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
+                    sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
+                    sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
+
+                    echo "Op-9304666r-S4: prod web server is backup and updated"
+                }
+            }
+        }
+
+stage('Op-9304666r-S5') {
+    steps {
+        script {
+            echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
+
+            // Run curl test against localhost:33500 and write result to /tmp/prod-result-file
+            sh """
+                curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
+            """
+
+            // Display result file content
+            sh "cat /tmp/prod-result-file"
+
+            // Fail pipeline if result is not HTTP/1.1 200 OK
+            def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+            if (prodResult != "HTTP/1.1 200 OK") {
+                error("Prod web test failed! Got result: ${prodResult}")
+            } else {
+                echo "Prod web test passed!"
+            }
+        }
+    }
+}
+
+        stage('Op-9304666r-S6') {
+            steps {
+                script {
+                    def userChoice = input(
+                        id: 'ReleaseOrRollback',
+                        message: 'Prod test completed. Choose next action:',
+                        parameters: [
+                            choice(name: 'ACTION', choices: ['Proceed to release Prod web server to production', 'Roll back Prod web server'], description: 'Select next step')
+                        ]
+                    )
+
+                    if (userChoice == 'Proceed to release Prod web server to production') {
+                        echo "Op-9304666r-S6: Proceed to release Prod web server to production"
+                    } else {
+                        echo "Rolling back Prod server using backup image..."
+                        sh """
+                            docker rm -f ${PROD_CONTAINER} || true
+                            docker run -d --name ${PROD_CONTAINER} -p ${PROD_PORT}:80 ${PROD_BACKUP_IMAGE}
+                        """
+                        echo "Op-9304666r-S6: Prod web server is rolled back"
+                        error("Aborting pipeline after rollback.")
+                    }
+                }
+            }
+        }
+
+        stage('Op-9304666r-S7') {
+            steps {
+                script {
+                    echo "Op-9304666r-S7: Prod web server is monitored and ready to serve."
                 }
             }
         }
     }
 }
+
