@@ -76,15 +76,7 @@ pipeline {
                     // -- MODIFICATION: Display both deployed and rollback versions --
                     def userChoice = input(
                         id: 'ProceedOrRollback',
-                        //message: "QA test for Current Version ${deployedVersion} passed.\n[Rollback will restore Version ${rollbackVersion}].\nChoose action:",
-                        message: """
-                        *** QA DEPLOYMENT APPROVAL ***
-
-                        New Version Deployed: ${deployedVersion}
-                        Rollback Target:    ${rollbackVersion}
-
-                        Please choose your action below.
-                        """,
+                        message: "QA test for Current Ver. ${deployedVersion} passed.\n[Rollback will restore Ver. ${rollbackVersion}].\nChoose action:",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Roll back QA server'], description: 'Select next step')
                         ]
@@ -164,15 +156,7 @@ pipeline {
                     // -- MODIFICATION: Display both deployed and rollback versions --
                     def userChoice = input(
                         id: 'ReleaseOrRollback',
-                        //message: "Prod test for Current Version ${prodDeployedVersion} passed.\n[Rollback will restore Version ${prodRollbackVersion}].\nChoose action:",
-                        message: """
-                        *** QA DEPLOYMENT APPROVAL ***
-
-                        New Version Deployed: ${deployedVersion}
-                        Rollback Target:    ${rollbackVersion}
-
-                        Please choose your action below.
-                        """,
+                        message: "Prod test for Current Ver. ${prodDeployedVersion} passed.\n[Rollback will restore Ver. ${prodRollbackVersion}].\nChoose action:",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to release Prod web server to production', 'Roll back Prod web server'], description: 'Select next step')
                         ]
