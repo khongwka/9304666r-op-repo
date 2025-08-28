@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    // -- MODIFICATION: Declare variables for version sharing --
+    def deployedVersion = ''
+    def prodDeployedVersion = ''
 
     environment {
         QA_CONTAINER = "9304666r-qa-svr"
@@ -33,35 +36,25 @@ pipeline {
             }
         }
 
-        // FIX: Added the stage('Op-9304666r-S2') wrapper and steps block
         stage('Op-9304666r-S2') {
             steps {
                 script {
                     echo "Op-9304666r-S2: Checking if QA server is running (via curl on port 33200)"
-
-                    // Run curl test against localhost:33200 and write result to /tmp/qa-result-file
-                    sh """
-                        curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || echo "FAIL" > /tmp/qa-result-file
-                    """
-
-                    // Display result file content
+                    sh "curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || echo 'FAIL' > /tmp/qa-result-file"
                     sh "cat /tmp/qa-result-file"
-
-                    // Fail pipeline if result is not HTTP/1.1 200 OK
                     def result = sh(script: "head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
+                    
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
                     } else {
                         echo "QA web test passed!"
-
-                        // -- NEW SECTION TO DISPLAY THE VERSION --
+                        // -- MODIFICATION: Get and display QA version --
                         echo "Fetching deployed version from QA container..."
-                        def deployedVersion = sh(
+                        deployedVersion = sh(
                             script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
                             returnStdout: true
                         ).trim()
                         echo "QA Server is running Version: ${deployedVersion}"
-                        // -- END OF NEW SECTION --
                     }
                 }
             }
@@ -70,9 +63,10 @@ pipeline {
         stage('Op-9304666r-S3') {
             steps {
                 script {
+                    // -- MODIFICATION: Display QA version in prompt --
                     def userChoice = input(
                         id: 'ProceedOrRollback',
-                        message: 'QA test completed. Choose next action:',
+                        message: "QA test for Version ${deployedVersion} passed. Choose next action:",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Roll back QA server'], description: 'Select next step')
                         ]
@@ -115,26 +109,25 @@ pipeline {
             }
         }
 
-        // FIX: Added the stage('Op-9304666r-S5') wrapper and steps block
         stage('Op-9304666r-S5') {
             steps {
                 script {
                     echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
-
-                    // Run curl test against localhost:33500 and write result to /tmp/prod-result-file
-                    sh """
-                        curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo "FAIL" > /tmp/prod-result-file
-                    """
-
-                    // Display result file content
+                    sh "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
                     sh "cat /tmp/prod-result-file"
-
-                    // Fail pipeline if result is not HTTP/1.1 200 OK
                     def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+
                     if (prodResult != "HTTP/1.1 200 OK") {
                         error("Prod web test failed! Got result: ${prodResult}")
                     } else {
                         echo "Prod web test passed!"
+                        // -- MODIFICATION: Get and display Prod version --
+                        echo "Fetching deployed version from Prod container..."
+                        prodDeployedVersion = sh(
+                            script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
+                            returnStdout: true
+                        ).trim()
+                        echo "Prod Server is running Version: ${prodDeployedVersion}"
                     }
                 }
             }
@@ -143,9 +136,10 @@ pipeline {
         stage('Op-9304666r-S6') {
             steps {
                 script {
+                    // -- MODIFICATION: Display Prod version in prompt --
                     def userChoice = input(
                         id: 'ReleaseOrRollback',
-                        message: 'Prod test completed. Choose next action:',
+                        message: "Prod test for Version ${prodDeployedVersion} passed. Choose next action:",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to release Prod web server to production', 'Roll back Prod web server'], description: 'Select next step')
                         ]
