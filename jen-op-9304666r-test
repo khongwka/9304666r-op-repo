@@ -5,13 +5,11 @@ pipeline {
         stage('Run and Verify Web Test') {
             steps {
                 script {
-                    // Step 1: Run the required command, writing to /tmp.
-                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
+                    // Temporarily write to the new test directory
+                    sh 'curl -Is http://localhost:33200 | head -n 1 > /jenkins-test/qa-result-file || true'
 
-                    // Step 2: Read the result file from /tmp.
-                    def result = readFile('/tmp/qa-result-file').trim()
+                    def result = readFile('/jenkins-test/qa-result-file').trim()
 
-                    // Step 3: Check the result.
                     if (result.contains('200 OK')) {
                         echo "Web test successful: ${result}"
                     } else {
