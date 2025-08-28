@@ -1,18 +1,24 @@
-stage('Run and Verify Web Test') {
-    steps {
-        script {
-            // Run the test command
-            sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
+pipeline {
+    agent any
 
-            // Read the result file into a variable
-            def result = readFile('/tmp/qa-result-file').trim()
+    stages { // <-- THIS WAS MISSING
+        stage('Run and Verify Web Test') {
+            steps { // <-- THIS WAS MISSING
+                script {
+                    // Run the test command
+                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
 
-            // Check the result
-            if (result.contains('200 OK')) {
-                echo "✅ Web test successful: ${result}"
-            } else {
-                // If the result is not '200 OK', fail the pipeline
-                error("❌ Web test FAILED. Server response was: '${result}'")
+                    // Read the result file into a variable
+                    def result = readFile('/tmp/qa-result-file').trim()
+
+                    // Check the result
+                    if (result.contains('200 OK')) {
+                        echo "✅ Web test successful: ${result}"
+                    } else {
+                        // If the result is not '200 OK', fail the pipeline
+                        error("❌ Web test FAILED. Server response was: '${result}'")
+                    }
+                }
             }
         }
     }
