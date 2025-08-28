@@ -59,8 +59,6 @@ stage('Op-9304666r-S1') {
         }
     }
 }
-            }
-        }
 
         stage('Op-9304666r-S2') {
             steps {
