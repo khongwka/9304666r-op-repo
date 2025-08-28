@@ -76,7 +76,7 @@ pipeline {
                     // -- MODIFICATION: Display both deployed and rollback versions --
                     def userChoice = input(
                         id: 'ProceedOrRollback',
-                        message: "QA test for Version ${deployedVersion} passed. Choose action. (Rollback will restore Version ${rollbackVersion})",
+                        message: "QA test for Current Version ${deployedVersion} passed. [Rollback will restore Version ${rollbackVersion}]. Choose action.",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to Roll out to Prod server', 'Roll back QA server'], description: 'Select next step')
                         ]
@@ -156,7 +156,7 @@ pipeline {
                     // -- MODIFICATION: Display both deployed and rollback versions --
                     def userChoice = input(
                         id: 'ReleaseOrRollback',
-                        message: "Prod test for Version ${prodDeployedVersion} passed. Choose next action. (Rollback will restore Version ${prodRollbackVersion})",
+                        message: "Prod test for Current Version ${prodDeployedVersion} passed. [Rollback will restore Version ${prodRollbackVersion}]. Choose action. ",
                         parameters: [
                             choice(name: 'ACTION', choices: ['Proceed to release Prod web server to production', 'Roll back Prod web server'], description: 'Select next step')
                         ]
