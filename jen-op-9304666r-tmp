@@ -21,14 +21,15 @@ pipeline {
 stage('Op-9304666r-S1') {
     steps {
         script {
-            echo "--- Get Rollback Version ---"
+            // This command will be visible, but is necessary to capture the version.
             rollbackVersion = sh(
                 script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
                 returnStdout: true
             ).trim()
             echo "Current QA Version (Rollback Target): ${rollbackVersion}"
 
-            echo "\n--- Prepare QA Container (Silent) ---"
+            // This groups all other commands into a single, clean step in Blue Ocean.
+            echo "Preparing QA container..."
             sh """
                 set -e
                 docker rmi -f ${QA_BACKUP_IMAGE} > /dev/null 2>&1 || true
@@ -38,7 +39,7 @@ stage('Op-9304666r-S1') {
                 docker exec ${QA_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1
             """
 
-            echo "\n--- Final Status ---"
+            // Final status update.
             echo "Op-S1-9304666r: QA web server is backup and updated"
         }
     }
