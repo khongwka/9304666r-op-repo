@@ -18,30 +18,46 @@ pipeline {
     }
 
     stages {
-                stage('Op-9304666r-S1') {
+stage('Op-9304666r-S1') {
+    steps {
+        stage('Get Rollback Version') {
             steps {
-script {
-    // This command must remain separate to capture the output variable.
-    rollbackVersion = sh(
-        script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
-        returnStdout: true
-    ).trim()
-    echo "Current QA Version (Rollback Target): ${rollbackVersion}"
+                script {
+                    rollbackVersion = sh(
+                        script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
+                        returnStdout: true
+                    ).trim()
+                }
+            }
+        }
 
-    // -- MODIFICATION: All silent commands are now in ONE sh block --
-    echo "Preparing QA container..."
-    sh """
-        set -e
-        # Backup and update steps are run silently here.
-        docker rmi -f ${QA_BACKUP_IMAGE} > /dev/null 2>&1 || true
-        docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE} > /dev/null 2>&1
-        docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script > /dev/null 2>&1
-        docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script > /dev/null 2>&1
-        docker exec ${QA_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1
-    """
+        stage('Display Info') {
+            steps {
+                echo "Current QA Version (Rollback Target): ${rollbackVersion}"
+            }
+        }
 
-    // Final status update
-    echo "Op-S1-9304666r: QA web server is backup and updated"
+        stage('Prepare QA Container') {
+            steps {
+                script {
+                    sh """
+                        set -e
+                        docker rmi -f ${QA_BACKUP_IMAGE} > /dev/null 2>&1 || true
+                        docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE} > /dev/null 2>&1
+                        docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script > /dev/null 2>&1
+                        docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script > /dev/null 2>&1
+                        docker exec ${QA_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1
+                    """
+                }
+            }
+        }
+        
+        stage('Final Status') {
+            steps {
+                echo "Op-S1-9304666r: QA web server is backup and updated"
+            }
+        }
+    }
 }
             }
         }
