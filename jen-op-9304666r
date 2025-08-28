@@ -56,8 +56,8 @@ stage('Op-9304666r-S1') {
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
                     } else {
-                        echo "QA web test passed!"
-                        echo "Fetching deployed version from QA container..."
+                        //echo "QA web test passed!"
+                        //echo "Fetching deployed version from QA container..."
                         deployedVersion = sh(
                             script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
                             returnStdout: true
@@ -95,58 +95,56 @@ stage('Op-9304666r-S1') {
             }
         }
 
-        stage('Op-9304666r-S4') {
-            steps {
-                script {
-                    // -- MODIFICATION: Capture the current version for rollback info --
-                    echo "Capturing current Prod version for rollback..."
-                    prodRollbackVersion = sh(
-                        script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
-                        returnStdout: true
-                    ).trim()
-                    echo "Current Prod Version (Rollback Target): ${prodRollbackVersion}"
+stage('Op-9304666r-S4') {
+    steps {
+        script {
+            // This command will be visible, but is necessary to capture the version.
+            prodRollbackVersion = sh(
+                script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
+                returnStdout: true
+            ).trim()
+            echo "Current Prod Version (Rollback Target): ${prodRollbackVersion}"
 
-                    echo "Removing old Prod backup image..."
-                    sh "docker rmi -f ${PROD_BACKUP_IMAGE} || true"
+            // This groups all other commands into a single, clean step in Blue Ocean.
+            echo "Preparing Prod container..."
+            sh """
+                set -e
+                docker rmi -f ${PROD_BACKUP_IMAGE} > /dev/null 2>&1 || true
+                docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE} > /dev/null 2>&1
+                docker exec ${PROD_CONTAINER} bash -c 'which puppet || apt-get update && apt-get install -y wget curl && wget https://apt.puppet.com/puppet7-release-bionic.deb && dpkg -i puppet7-release-bionic.deb && apt-get update && apt-get install -y puppet-agent' > /dev/null 2>&1
+                docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script > /dev/null 2>&1
+                docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script > /dev/null 2>&1
+                docker exec ${PROD_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1
+            """
 
-                    echo "Creating new Prod backup image from container ${PROD_CONTAINER}..."
-                    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${PROD_CONTAINER} ${PROD_BACKUP_IMAGE}"
+            // Final status update.
+            echo "Op-9304666r-S4: prod web server is backup and updated"
+        }
+    }
+}
 
-                    echo "Installing Puppet agent in Prod container if needed..."
-                    sh "docker exec ${PROD_CONTAINER} bash -c 'which puppet || apt-get update && apt-get install -y wget curl && wget https://apt.puppet.com/puppet7-release-bionic.deb && dpkg -i puppet7-release-bionic.deb && apt-get update && apt-get install -y puppet-agent'"
+stage('Op-9304666r-S5') {
+    steps {
+        script {
+            echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
+            sh "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
+            sh "cat /tmp/prod-result-file"
+            def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
 
-                    echo "Updating Prod server using script..."
-                    sh "docker cp 9304666r_script ${PROD_CONTAINER}:/tmp/9304666r_script"
-                    sh "docker exec ${PROD_CONTAINER} chmod +x /tmp/9304666r_script"
-                    sh "docker exec ${PROD_CONTAINER} /tmp/9304666r_script"
-
-                    echo "Op-9304666r-S4: prod web server is backup and updated"
-                }
+            if (prodResult != "HTTP/1.1 200 OK") {
+                error("Prod web test failed! Got result: ${prodResult}")
+            } else {
+                //echo "Prod web test passed!"
+                //echo "Fetching deployed version from Prod container..."
+                prodDeployedVersion = sh(
+                    script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
+                    returnStdout: true
+                ).trim()
+                echo "Prod Server is running Version: ${prodDeployedVersion}"
             }
         }
-
-        stage('Op-9304666r-S5') {
-            steps {
-                script {
-                    echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
-                    sh "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
-                    sh "cat /tmp/prod-result-file"
-                    def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
-
-                    if (prodResult != "HTTP/1.1 200 OK") {
-                        error("Prod web test failed! Got result: ${prodResult}")
-                    } else {
-                        echo "Prod web test passed!"
-                        echo "Fetching deployed version from Prod container..."
-                        prodDeployedVersion = sh(
-                            script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
-                            returnStdout: true
-                        ).trim()
-                        echo "Prod Server is running Version: ${prodDeployedVersion}"
-                    }
-                }
-            }
-        }
+    }
+}
 
         stage('Op-9304666r-S6') {
             steps {
