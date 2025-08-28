@@ -53,7 +53,10 @@ pipeline {
                     """
 
                     // Display result
-                    sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
+                    //sh "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file"
+                    def qaResult = sh(script: "docker exec ${QA_CONTAINER} cat /tmp/qa-result-file", returnStdout: true).trim()
+                    echo "+ cat /tmp/qa-result-file"
+                    echo qaResult
 
                     // Fail pipeline if test failed
                     def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
@@ -127,7 +130,10 @@ pipeline {
                     """
 
                     // Display result
-                    sh "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file"
+                    //sh "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file"
+                    def prodResult = sh(script: "docker exec ${PROD_CONTAINER} cat /tmp/prod-result-file", returnStdout: true).trim()
+                    echo "+ cat /tmp/prod-result-file"
+                    echo prodResult
 
                     // Fail pipeline if test failed
                     def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
@@ -175,3 +181,4 @@ pipeline {
         }
     }
 }
+
