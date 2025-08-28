@@ -59,7 +59,7 @@ pipeline {
                     echo qaResult
 
                     // Fail pipeline if test failed
-                    def result = sh(script: "docker exec ${QA_CONTAINER} head -n 1 /tmp/qa-result-file", returnStdout: true).trim()
+                    
                     if (result != "HTTP/1.1 200 OK") {
                         error("QA web test failed! Got result: ${result}")
                     } else {
@@ -136,7 +136,7 @@ pipeline {
                     echo prodResult
 
                     // Fail pipeline if test failed
-                    def prodResult = sh(script: "docker exec ${PROD_CONTAINER} head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+                    
                     if (prodResult != "HTTP/1.1 200 OK") {
                         error("Prod web test failed! Got result: ${prodResult}")
                     } else {
@@ -181,4 +181,5 @@ pipeline {
         }
     }
 }
+
 
