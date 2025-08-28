@@ -1,8 +1,9 @@
+// FIX: Variables are declared here, outside and above the pipeline block
+def deployedVersion = ''
+def prodDeployedVersion = ''
+
 pipeline {
     agent any
-    // -- MODIFICATION: Declare variables for version sharing --
-    def deployedVersion = ''
-    def prodDeployedVersion = ''
 
     environment {
         QA_CONTAINER = "9304666r-qa-svr"
@@ -48,8 +49,8 @@ pipeline {
                         error("QA web test failed! Got result: ${result}")
                     } else {
                         echo "QA web test passed!"
-                        // -- MODIFICATION: Get and display QA version --
                         echo "Fetching deployed version from QA container..."
+                        // FIX: Assign to the globally declared variable (no 'def')
                         deployedVersion = sh(
                             script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
                             returnStdout: true
@@ -63,7 +64,6 @@ pipeline {
         stage('Op-9304666r-S3') {
             steps {
                 script {
-                    // -- MODIFICATION: Display QA version in prompt --
                     def userChoice = input(
                         id: 'ProceedOrRollback',
                         message: "QA test for Version ${deployedVersion} passed. Choose next action:",
@@ -121,8 +121,8 @@ pipeline {
                         error("Prod web test failed! Got result: ${prodResult}")
                     } else {
                         echo "Prod web test passed!"
-                        // -- MODIFICATION: Get and display Prod version --
                         echo "Fetching deployed version from Prod container..."
+                        // FIX: Assign to the globally declared variable (no 'def')
                         prodDeployedVersion = sh(
                             script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
                             returnStdout: true
@@ -136,7 +136,6 @@ pipeline {
         stage('Op-9304666r-S6') {
             steps {
                 script {
-                    // -- MODIFICATION: Display Prod version in prompt --
                     def userChoice = input(
                         id: 'ReleaseOrRollback',
                         message: "Prod test for Version ${prodDeployedVersion} passed. Choose next action:",
