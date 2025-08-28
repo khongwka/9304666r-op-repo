@@ -126,27 +126,40 @@ stage('Op-9304666r-S1') {
         }
 
         stage('Op-9304666r-S5') {
-            steps {
-                script {
-                    echo "Op-9304666r-S5: Checking if Prod server is running (via curl on port 33500)"
-                    sh "curl -Is http://localhost:33500 | head -n 1 > /tmp/prod-result-file || echo 'FAIL' > /tmp/prod-result-file"
-                    sh "cat /tmp/prod-result-file"
-                    def prodResult = sh(script: "head -n 1 /tmp/prod-result-file", returnStdout: true).trim()
+    steps {
+        script {
+            // This single block performs all actions and captures only the specified outputs.
+            def finalStatus = sh(
+                returnStdout: true,
+                script: """
+                    set -e
+                    
+                    # Define a variable for the result file
+                    RESULT_FILE="/tmp/prod-result-file"
 
-                    if (prodResult != "HTTP/1.1 200 OK") {
-                        error("Prod web test failed! Got result: ${prodResult}")
-                    } else {
-                        echo "Prod web test passed!"
-                        echo "Fetching deployed version from Prod container..."
-                        prodDeployedVersion = sh(
-                            script: "docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD'",
-                            returnStdout: true
-                        ).trim()
-                        echo "Prod Server is running Version: ${prodDeployedVersion}"
-                    }
-                }
-            }
+                    # 1. Run the curl test silently.
+                    curl -Is http://localhost:33500 | head -n 1 > \$RESULT_FILE || echo 'FAIL' > \$RESULT_FILE
+                    
+                    # 2. Check the result.
+                    RESULT=\$(head -n 1 \$RESULT_FILE)
+                    if [[ ! "\$RESULT" == "HTTP/1.1 200 OK" ]]; then
+                        echo "ERROR: Prod web test failed! Got result: \$RESULT"
+                        exit 1
+                    fi
+
+                    # 3. Explicitly show the content of the result file.
+                    cat \$RESULT_FILE
+                    
+                    # 4. Get the deployed version silently.
+                    DEPLOYED_VERSION=\$(docker exec ${PROD_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD')
+                    
+                    # 5. Print the final status line.
+                    echo "Prod Server is running Version: \$DEPLOYED_VERSION"
+                """
+            ).trim()
         }
+    }
+}
 
         stage('Op-9304666r-S6') {
             steps {
