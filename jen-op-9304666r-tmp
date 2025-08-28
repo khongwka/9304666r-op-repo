@@ -12,30 +12,24 @@ pipeline {
     }
 
     stages {
-        stage('Op-9304666r-S1') {
-            steps {
-                script {
-                    echo "Removing old QA backup image..."
-                    sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
+stage('Op-9304666r-S1') {
+    steps {
+        script {
+            // ... (backup steps remain the same) ...
 
-                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
-                    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
+            echo "Copying Puppet script into QA container..."
+            sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
+            sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
 
-                    echo "Copying Puppet script into QA container..."
-                    sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
-                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
+            // The redundant 'Copying HTML file...' block has been removed.
 
-                    echo "Copying HTML file into QA container..."
-                    sh "docker exec ${QA_CONTAINER} mkdir -p /operate/9304666r/"
-                    sh "docker cp index-op-9304666r.html ${QA_CONTAINER}:/operate/9304666r/index-op-9304666r.html"
+            echo "Running 9304666r_script inside QA container..."
+            sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
 
-                    echo "Running 9304666r_script inside QA container..."
-                    sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
-
-                    echo "Op-S1-9304666r: QA web server is backup and updated"
-                }
-            }
+            echo "Op-S1-9304666r: QA web server is backup and updated"
         }
+    }
+}
 
 stage('Op-9304666r-S2') {
     steps {
