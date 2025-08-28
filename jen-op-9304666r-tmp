@@ -21,19 +21,24 @@ pipeline {
                 stage('Op-9304666r-S1') {
             steps {
 script {
-    // DO NOT silence this command, as its output is captured for the 'rollbackVersion' variable.
+    // This command must remain separate to capture the output variable.
     rollbackVersion = sh(
         script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
         returnStdout: true
     ).trim()
     echo "Current QA Version (Rollback Target): ${rollbackVersion}"
 
-    // These docker commands are safe to silence as their output is not used by other stages.
-    sh "docker rmi -f ${QA_BACKUP_IMAGE} > /dev/null 2>&1 || true"
-    sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE} > /dev/null 2>&1"
-    sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script > /dev/null 2>&1"
-    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script > /dev/null 2>&1"
-    sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1"
+    // -- MODIFICATION: All silent commands are now in ONE sh block --
+    echo "Preparing QA container..."
+    sh """
+        set -e
+        # Backup and update steps are run silently here.
+        docker rmi -f ${QA_BACKUP_IMAGE} > /dev/null 2>&1 || true
+        docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE} > /dev/null 2>&1
+        docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script > /dev/null 2>&1
+        docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script > /dev/null 2>&1
+        docker exec ${QA_CONTAINER} /tmp/9304666r_script > /dev/null 2>&1
+    """
 
     // Final status update
     echo "Op-S1-9304666r: QA web server is backup and updated"
