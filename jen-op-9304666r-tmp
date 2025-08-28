@@ -18,28 +18,34 @@ pipeline {
     }
 
     stages {
-        stage('Op-9304666r-S1') {
+                stage('Op-9304666r-S1') {
             steps {
                 script {
-                    // -- MODIFICATION: Capture the current version for rollback info --
-                    echo "Capturing current QA version for rollback..."
+                    // Removed: "Capturing current QA version for rollback..." echo.
+                    // This command's output is captured; redirecting stdout to hide the command itself.
                     rollbackVersion = sh(
-                        script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' || echo 'unknown'",
+                        script: "docker exec ${QA_CONTAINER} sh -c 'cd /operate/9304666r && git rev-parse --short HEAD' 1>/dev/null || echo 'unknown'",
                         returnStdout: true
                     ).trim()
                     echo "Current QA Version (Rollback Target): ${rollbackVersion}"
 
-                    echo "Removing old QA backup image..."
-                    sh "docker rmi -f ${QA_BACKUP_IMAGE} || true"
+                    // Removed: "Removing old QA backup image..." echo.
+                    // Redirecting stdout/stderr to hide the command itself.
+                    sh "docker rmi -f ${QA_BACKUP_IMAGE} >/dev/null 2>&1 || true"
 
-                    echo "Creating new QA backup image from container ${QA_CONTAINER}..."
+                    // Removed: "Creating new QA backup image from container..." echo.
+                    // Keep 'docker commit' command visible as its output is often useful.
                     sh "docker commit --change='CMD [\"apache2ctl\", \"-D\", \"FOREGROUND\"]' ${QA_CONTAINER} ${QA_BACKUP_IMAGE}"
 
-                    echo "Copying Puppet script into QA container..."
-                    sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script"
-                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script"
+                    // Removed: "Copying Puppet script into QA container..." echo.
+                    // Redirecting stdout/stderr to hide the command itself.
+                    sh "docker cp 9304666r_script ${QA_CONTAINER}:/tmp/9304666r_script >/dev/null 2>&1"
+                    
+                    // Redirecting stdout/stderr to hide the command itself.
+                    sh "docker exec ${QA_CONTAINER} chmod +x /tmp/9304666r_script >/dev/null 2>&1"
 
-                    echo "Running 9304666r_script inside QA container..."
+                    // Removed: "Running 9304666r_script inside QA container..." echo.
+                    // Keep the actual execution command visible, as its output contains script messages.
                     sh "docker exec ${QA_CONTAINER} /tmp/9304666r_script"
 
                     echo "Op-S1-9304666r: QA web server is backup and updated"
