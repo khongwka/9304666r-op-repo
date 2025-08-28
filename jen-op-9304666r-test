@@ -1,22 +1,21 @@
 pipeline {
     agent any
 
-    stages { // <-- THIS WAS MISSING
+    stages {
         stage('Run and Verify Web Test') {
-            steps { // <-- THIS WAS MISSING
+            steps {
                 script {
-                    // Run the test command
+                    // Step 1: Run the required command, writing to /tmp.
                     sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
 
-                    // Read the result file into a variable
+                    // Step 2: Read the result file from /tmp.
                     def result = readFile('/tmp/qa-result-file').trim()
 
-                    // Check the result
+                    // Step 3: Check the result.
                     if (result.contains('200 OK')) {
-                        echo "✅ Web test successful: ${result}"
+                        echo "Web test successful: ${result}"
                     } else {
-                        // If the result is not '200 OK', fail the pipeline
-                        error("❌ Web test FAILED. Server response was: '${result}'")
+                        error("Web test FAILED. Server response was: '${result}'")
                     }
                 }
             }
