@@ -1,0 +1,22 @@
+pipeline {
+    agent any
+
+    stages {
+        stage('Run and Verify Web Test') {
+            steps {
+                script {
+                    // This command attempts to write to the restricted /tmp directory.
+                    sh 'curl -Is http://localhost:33200 | head -n 1 > /tmp/qa-result-file || true'
+
+                    def result = readFile('/tmp/qa-result-file').trim()
+
+                    if (result.contains('200 OK')) {
+                        echo "Web test successful: ${result}"
+                    } else {
+                        error("Web test FAILED. Server response was: '${result}'")
+                    }
+                }
+            }
+        }
+    }
+}
