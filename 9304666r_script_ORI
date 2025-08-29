@@ -1,0 +1,37 @@
+#!/bin/bash
+set -e
+
+# 1) Ensure Puppet is installed
+PUPPET_BIN="/opt/puppetlabs/bin/puppet"
+if [ ! -x "$PUPPET_BIN" ]; then
+    echo "Error: Puppet CLI not found at $PUPPET_BIN"
+    exit 1
+fi
+
+# 2) Ensure Apache2 is installed and running
+echo "Ensuring Apache2 is installed and running..."
+$PUPPET_BIN resource package apache2 ensure=installed
+$PUPPET_BIN resource service apache2 ensure=running enable=true
+
+# 3) Ensure git is installed
+echo "Ensuring Git is installed..."
+$PUPPET_BIN resource package git ensure=installed
+
+# 4) Remove and recreate /operate/9304666r
+echo "Setting up /operate/9304666r directory..."
+rm -rf /operate/9304666r
+mkdir -p /operate/9304666r
+
+# 5) Clone GitHub repo into /operate/9304666r
+echo "Cloning repository..."
+git clone https://github.com/khongwka/9304666r-op-repo.git /operate/9304666r
+
+# 6) Copy index HTML into Apache web root
+echo "Updating Apache web root..."
+if [ ! -f /operate/9304666r/index-op-9304666r.html ]; then
+    echo "Error: index-op-9304666r.html not found in repo!"
+    exit 1
+fi
+cp /operate/9304666r/index-op-9304666r.html /var/www/html/index.html
+
+echo "9304666r_script completed successfully."
