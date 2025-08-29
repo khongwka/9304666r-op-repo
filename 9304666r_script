@@ -26,12 +26,20 @@ mkdir -p /operate/9304666r
 echo "Cloning repository..."
 git clone https://github.com/khongwka/9304666r-op-repo.git /operate/9304666r
 
-# 6) Copy index HTML into Apache web root
+# 6) Inject Version Hash and Copy HTML into Apache web root
+echo "Injecting version hash into HTML..."
+# Get the short git commit hash from the cloned repo
+VERSION_HASH=$(cd /operate/9304666r && git rev-parse --short HEAD)
+
+# Define the path to the HTML file
+HTML_FILE="/operate/9304666r/index-op-9304666r.html"
+
+# Use the 'sed' command to find and replace the placeholder
+sed -i "s/%%VERSION%%/$VERSION_HASH/g" $HTML_FILE
+
 echo "Updating Apache web root..."
-if [ ! -f /operate/9304666r/index-op-9304666r.html ]; then
+if [ ! -f $HTML_FILE ]; then
     echo "Error: index-op-9304666r.html not found in repo!"
     exit 1
 fi
-cp /operate/9304666r/index-op-9304666r.html /var/www/html/index.html
-
-echo "9304666r_script completed successfully."
+cp $HTML_FILE /var/www/html/index.html
